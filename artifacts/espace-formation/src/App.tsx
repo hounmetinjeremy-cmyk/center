@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+// trigger fresh deploy after GitHub incident
 import {
   ArrowRight,
   BookOpen,
@@ -60,8 +61,6 @@ const formations: Formation[] = [
   },
 ];
 
-// Récupère le code de parrainage depuis l'URL (?ref=CODE) et le garde en attente
-// jusqu'à ce que la personne se connecte, où il sera automatiquement validé.
 function capturePendingReferralFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const ref = params.get("ref");
@@ -71,8 +70,6 @@ function capturePendingReferralFromUrl() {
   }
 }
 
-// Cree/met a jour le profil ET renvoie le solde de coins, le code de parrainage
-// et si l'acces global (formations + groupe prive) est deja debloque.
 async function syncWallet(
   uid: string,
   email: string | null,
@@ -147,9 +144,6 @@ function App() {
 
   const showToast = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
 
-  // Supabase = base de donnees : profil, portefeuille de coins, parrainage et
-  // etat de deblocage sont synchronises apres la connexion Firebase, via une
-  // fonction securisee (RLS classique bloquerait car pas de session Supabase Auth).
   useEffect(() => {
     if (!authUser) return;
 
@@ -197,7 +191,6 @@ function App() {
     );
   };
 
-  // Etape 1 -> Etape 2 : une fois la selection validee, direction le paiement du ticket.
   const validateSelection = () => {
     if (selectedFormations.length === 0) {
       showToast("Sélectionne au moins une formation avant de continuer.", "warning");
@@ -328,8 +321,6 @@ function App() {
 }
 
 
-// Accueil épuré : plus de barre de progression ni de suivi de leçons.
-// Juste un point d'entrée clair vers la sélection puis le paiement.
 function HomeView({ user, firstName, unlocked, onGoToFormations, onGoToAccesPrive }: { user: AppUser; firstName: string; unlocked: boolean; onGoToFormations: () => void; onGoToAccesPrive: () => void }) {
   return <div className="view-stack">
     <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p><span className="email-chip">{user.email}</span></section>
@@ -347,7 +338,6 @@ function HomeView({ user, firstName, unlocked, onGoToFormations, onGoToAccesPriv
   </div>;
 }
 
-// Etape 1 : selection par cases a cocher de toutes les formations disponibles.
 function FormationsView({
   formations: list,
   selected,
@@ -403,7 +393,6 @@ function FormationsView({
   </div>;
 }
 
-// Onglet dedie : portefeuille de coins + programme de parrainage.
 function WalletView({
   coins,
   referralCode,
@@ -445,7 +434,6 @@ function WalletView({
   </div>;
 }
 
-// Etape 2 : achat du ticket unique (formations + groupe prive), puis saisie du code.
 function PrivateAccessView({
   userName,
   unlocked,
