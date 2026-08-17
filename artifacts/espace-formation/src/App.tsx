@@ -9,10 +9,10 @@ import {
   Copy,
   Gift,
   KeyRound,
+  Lock,
   LogOut,
   Menu,
   MessageCircle,
-  Play,
   ShieldCheck,
   Sparkles,
   Ticket,
@@ -78,15 +78,14 @@ function capturePendingReferralFromUrl() {
   }
 }
 
-// Cree/met a jour le profil ET renvoie le solde de coins + le code de parrainage,
-// en un seul appel a une fonction "security definer" (contourne les policies RLS
-// qui exigent normalement une session Supabase Auth, absente ici car on utilise Firebase).
+// Cree/met a jour le profil ET renvoie le solde de coins, le code de parrainage
+// et si l'acces global (formations + groupe prive) est deja debloque.
 async function syncWallet(
   uid: string,
   email: string | null,
   displayName: string | null,
   avatarUrl: string | null,
-): Promise<{ coins: number; referralCode: string | null } | null> {
+): Promise<{ coins: number; referralCode: string | null; unlocked: boolean } | null> {
   const { data, error } = await supabase.rpc("sync_wallet", {
     p_user_id: uid,
     p_email: email,
@@ -99,7 +98,11 @@ async function syncWallet(
   }
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;
-  return { coins: row.coins ?? 0, referralCode: row.referral_code ?? null };
+  return {
+    coins: row.coins ?? 0,
+    referralCode: row.referral_code ?? null,
+    unlocked: Boolean(row.access_unlocked),
+  };
 }
 
 async function claimPendingReferral(uid: string): Promise<boolean> {
@@ -112,6 +115,11 @@ async function claimPendingReferral(uid: string): Promise<boolean> {
     return false;
   }
   return Boolean(data);
+}
+
+async function markAccessUnlocked(uid: string) {
+  const { error } = await supabase.rpc("unlock_access", { p_user_id: uid });
+  if (error) console.warn("unlock_access:", error.message);
 }
 
 function App() {
@@ -131,8 +139,8 @@ function App() {
   const [coins, setCoins] = useState(0);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
 
-  // Capture un eventuel code de parrainage dans l'URL, meme avant connexion.
   useEffect(() => {
     capturePendingReferralFromUrl();
   }, []);
@@ -154,9 +162,9 @@ function App() {
 
   const showToast = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
 
-  // Supabase = base de donnees : profil, portefeuille de coins et parrainage
-  // sont synchronises apres la connexion Firebase, via une fonction securisee
-  // (les policies RLS classiques ne s'appliquent pas car il n'y a pas de session Supabase Auth).
+  // Supabase = base de donnees : profil, portefeuille de coins, parrainage et
+  // etat de deblocage sont synchronises apres la connexion Firebase, via une
+  // fonction securisee (RLS classique bloquerait car pas de session Supabase Auth).
   useEffect(() => {
     if (!authUser) return;
 
@@ -172,6 +180,7 @@ function App() {
       if (wallet) {
         setCoins(wallet.coins);
         setReferralCode(wallet.referralCode);
+        setUnlocked(wallet.unlocked);
       } else {
         showToast("Impossible de charger ton portefeuille pour le moment.", "warning");
       }
@@ -208,6 +217,22 @@ function App() {
     setSelectedModule(null);
   };
 
+  // Une formation ne s'ouvre que si l'acces global est debloque (ticket paye + code valide).
+  // Sinon, on redirige directement vers l'onglet d'achat du ticket.
+  const handleModuleClick = (module: Module) => {
+    if (!unlocked) {
+      setActiveNav("acces-prive");
+      showToast("Paye ton ticket d'entrée pour débloquer les formations.", "info");
+      return;
+    }
+    setSelectedModule(module);
+  };
+
+  const handleUnlocked = async () => {
+    setUnlocked(true);
+    if (authUser) await markAccessUnlocked(authUser.uid);
+  };
+
   const copyReferralLink = async () => {
     if (!referralCode) return;
     const link = `${window.location.origin}${window.location.pathname}?ref=${referralCode}`;
@@ -242,16 +267,25 @@ function App() {
           <button type="button" className="icon-button" data-testid="button-open-menu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><Menu size={20} /></button>
           <div className="brand-lockup"><span className="brand-mark"><Sparkles size={14} /></span><span>Espace <b>formation</b></span></div>
           <div className="topbar-right">
-          <span className="coin-chip" data-testid="text-coin-balance" title="Ton solde de pièces"><Coins size={13} /><b>{walletLoading ? "…" : coins}</b></span>
+          <button
+            type="button"
+            className="coin-chip"
+            data-testid="text-coin-balance"
+            title="Voir mon portefeuille"
+            onClick={() => setActiveNav("portefeuille")}
+            style={{ border: 0, cursor: "pointer" }}
+          >
+            <Coins size={13} /><b>{walletLoading ? "…" : coins}</b>
+          </button>
           <div className="user-bubble" title={user.email ?? undefined}>{user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={17} />}</div>
           </div>
         </header>
 
         <div className="app-content">
           {activeNav === "accueil" && (
-            <HomeView user={user} firstName={firstName} progress={progress} coins={coins} modules={visibleModules} onModule={setSelectedModule} onAllModules={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
+            <HomeView user={user} firstName={firstName} progress={progress} coins={coins} unlocked={unlocked} modules={visibleModules} onModule={handleModuleClick} onAllModules={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
           )}
-          {activeNav === "formations" && <FormationsView modules={visibleModules} onModule={setSelectedModule} onBack={() => setActiveNav("accueil")} />}
+          {activeNav === "formations" && <FormationsView modules={visibleModules} unlocked={unlocked} onModule={handleModuleClick} onBack={() => setActiveNav("accueil")} />}
           {activeNav === "portefeuille" && (
             <WalletView
               coins={coins}
@@ -261,7 +295,7 @@ function App() {
             />
           )}
           {activeNav === "acces-prive" && (
-            <PrivateAccessView userName={user.displayName} onToast={showToast} />
+            <PrivateAccessView userName={user.displayName} unlocked={unlocked} onUnlocked={handleUnlocked} onToast={showToast} />
           )}
         </div>
 
@@ -288,11 +322,10 @@ function App() {
                 <button type="button" className="menu-close" aria-label="Fermer le menu" onClick={() => setMenuOpen(false)}><X size={17} /></button>
               </div>
               <div className="menu-profile">
-                <span className="menu-profile-avatar"><UserRound size={18} /></span>
+                <span className="menu-profile-avatar">{user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={18} />}</span>
                 <span><b>{user.displayName}</b><small>{user.email}</small></span>
               </div>
               <div className="menu-actions">
-                <button type="button" onClick={() => { setMenuOpen(false); showToast("Ton profil est à jour.", "info"); }}><UserRound size={17} /><span>Mon profil</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("portefeuille"); }}><Coins size={17} /><span>Portefeuille</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("acces-prive"); }}><Ticket size={17} /><span>Accès privé</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); showToast("La communauté est prête à t’accueillir.", "info"); }}><MessageCircle size={17} /><span>Communauté</span><ChevronRight size={15} /></button>
@@ -316,21 +349,21 @@ function App() {
 
 
 
-function HomeView({ user, firstName, progress, coins, modules: visibleModules, onModule, onAllModules, onGoToAccesPrive }: { user: AppUser; firstName: string; progress: number; coins: number; modules: Module[]; onModule: (module: Module) => void; onAllModules: () => void; onGoToAccesPrive: () => void }) {
+function HomeView({ user, firstName, progress, coins, unlocked, modules: visibleModules, onModule, onAllModules, onGoToAccesPrive }: { user: AppUser; firstName: string; progress: number; coins: number; unlocked: boolean; modules: Module[]; onModule: (module: Module) => void; onAllModules: () => void; onGoToAccesPrive: () => void }) {
   return <div className="view-stack">
     <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p><span className="email-chip">{user.email}</span></section>
     <section className="progress-card animate-rise"><div><p className="eyebrow">TON PARCOURS</p><h2>Tu avances bien.</h2><p>Chaque leçon te rapproche de ton prochain objectif.</p></div><strong>{progress}%</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="coin-balance-row"><span><Coins size={13} /> Solde</span><b data-testid="text-home-coin-balance">{coins} pièces</b></div></section>
-    <section className="section-block animate-rise"><div className="section-heading"><div><p className="eyebrow">À DÉCOUVRIR</p><h2>Formations pratiques</h2></div><button type="button" className="text-button" data-testid="button-view-all-formations" onClick={onAllModules}>Tout voir <ArrowRight size={14} /></button></div><div className="module-scroller">{visibleModules.slice(0, 2).map((module) => <ModuleCard key={module.id} module={module} onClick={() => onModule(module)} />)}</div></section>
+    <section className="section-block animate-rise"><div className="section-heading"><div><p className="eyebrow">À DÉCOUVRIR</p><h2>Formations pratiques</h2></div><button type="button" className="text-button" data-testid="button-view-all-formations" onClick={onAllModules}>Tout voir <ArrowRight size={14} /></button></div><div className="module-scroller">{visibleModules.slice(0, 2).map((module) => <ModuleCard key={module.id} module={module} locked={!unlocked} onClick={() => onModule(module)} />)}</div></section>
     <button type="button" className="community-card animate-rise" onClick={onGoToAccesPrive} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer" }}>
       <span className="community-icon"><Ticket size={20} /></span>
-      <div><p className="eyebrow">GROUPE PRIVÉ</p><h3>Ton accès WhatsApp</h3><p>Paye ton ticket et rejoins la communauté fermée.</p></div>
+      <div><p className="eyebrow">GROUPE PRIVÉ</p><h3>{unlocked ? "Accès débloqué" : "Ton accès WhatsApp"}</h3><p>{unlocked ? "Rejoins la communauté à tout moment." : "Paye ton ticket unique : formations + groupe."}</p></div>
       <ArrowRight size={17} />
     </button>
   </div>;
 }
 
-function FormationsView({ modules: visibleModules, onModule, onBack }: { modules: Module[]; onModule: (module: Module) => void; onBack: () => void }) {
-  return <div className="view-stack formations-view"><div className="page-heading"><button type="button" className="back-button" data-testid="button-back-home" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button><div><p className="eyebrow">BIBLIOTHÈQUE</p><h1>Toutes les formations</h1></div></div><div className="formation-list">{visibleModules.map((module) => <ModuleCard key={module.id} module={module} onClick={() => onModule(module)} full />)}</div></div>;
+function FormationsView({ modules: visibleModules, unlocked, onModule, onBack }: { modules: Module[]; unlocked: boolean; onModule: (module: Module) => void; onBack: () => void }) {
+  return <div className="view-stack formations-view"><div className="page-heading"><button type="button" className="back-button" data-testid="button-back-home" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button><div><p className="eyebrow">BIBLIOTHÈQUE</p><h1>Toutes les formations</h1></div></div><div className="formation-list">{visibleModules.map((module) => <ModuleCard key={module.id} module={module} locked={!unlocked} onClick={() => onModule(module)} full />)}</div></div>;
 }
 
 // Onglet dedie : portefeuille de coins + programme de parrainage.
@@ -375,9 +408,19 @@ function WalletView({
   </div>;
 }
 
-// Onglet dedie : achat du ticket d'entree, puis saisie du code recu pour valider l'acces.
-function PrivateAccessView({ userName, onToast }: { userName: string; onToast: (message: string, kind?: ToastKind) => void }) {
-  const [step, setStep] = useState<"pay" | "redeem" | "done">("pay");
+// Onglet dedie : achat du ticket unique (formations + groupe prive), puis saisie du code.
+function PrivateAccessView({
+  userName,
+  unlocked,
+  onUnlocked,
+  onToast,
+}: {
+  userName: string;
+  unlocked: boolean;
+  onUnlocked: () => void;
+  onToast: (message: string, kind?: ToastKind) => void;
+}) {
+  const [step, setStep] = useState<"pay" | "redeem" | "done">(unlocked ? "done" : "pay");
   const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [enteredCode, setEnteredCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -405,7 +448,8 @@ function PrivateAccessView({ userName, onToast }: { userName: string; onToast: (
     try {
       const { inviteUrl } = await redeemTicketCode(enteredCode);
       setStep("done");
-      onToast("Code validé ! Ouverture du groupe WhatsApp...", "success");
+      onUnlocked();
+      onToast("Code validé ! Formations débloquées, ouverture de WhatsApp...", "success");
       window.location.href = inviteUrl;
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Code incorrect.", "warning");
@@ -413,6 +457,21 @@ function PrivateAccessView({ userName, onToast }: { userName: string; onToast: (
       setBusy(false);
     }
   };
+
+  if (step === "done") {
+    return <div className="view-stack">
+      <div className="page-heading">
+        <div><p className="eyebrow">TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div>
+        <span className="reward-icon"><Ticket size={18} /></span>
+      </div>
+      <section className="reward-card">
+        <ShieldCheck size={26} />
+        <p>Accès débloqué</p>
+        <strong>✓</strong>
+        <span>Tu as accès à toutes les formations et au groupe WhatsApp privé.</span>
+      </section>
+    </div>;
+  }
 
   return <div className="view-stack">
     <div className="page-heading">
@@ -422,11 +481,11 @@ function PrivateAccessView({ userName, onToast }: { userName: string; onToast: (
 
     <section className="steps-card">
       <p className="eyebrow">ÉTAPE 1</p>
-      <h2>Paye ton ticket d'entrée</h2>
+      <h2>Paye ton ticket unique</h2>
       <div className="reward-step">
         <span>01</span>
         <i><ShieldCheck size={15} /></i>
-        <div><b>Paiement</b><small>{step === "pay" ? "En attente de paiement" : "Payé ✓"}</small></div>
+        <div><b>Paiement</b><small>{step === "pay" ? "Débloque formations + groupe WhatsApp" : "Payé ✓"}</small></div>
       </div>
       {step === "pay" && (
         <button type="button" className="primary-button" data-testid="button-pay-ticket" onClick={handlePay} disabled={busy}>
@@ -451,7 +510,6 @@ function PrivateAccessView({ userName, onToast }: { userName: string; onToast: (
           placeholder="Ex: A3F7K9"
           maxLength={6}
           data-testid="input-ticket-code"
-          className="auth-field-input"
           style={{
             width: "100%",
             marginTop: 10,
@@ -469,18 +527,26 @@ function PrivateAccessView({ userName, onToast }: { userName: string; onToast: (
           className="primary-button"
           data-testid="button-redeem-ticket"
           onClick={handleRedeem}
-          disabled={busy || step === "done"}
+          disabled={busy}
           style={{ marginTop: 12 }}
         >
-          {busy ? "Vérification..." : "Entrer le code et accéder au groupe"} <ArrowRight size={16} />
+          {busy ? "Vérification..." : "Entrer le code et débloquer l'accès"} <ArrowRight size={16} />
         </button>
       </section>
     )}
   </div>;
 }
 
-function ModuleCard({ module, onClick, full = false }: { module: Module; onClick: () => void; full?: boolean }) {
-  return <button type="button" data-testid={`card-module-${module.id}`} className={`module-card module-${module.tone} ${full ? "module-full" : ""}`} onClick={onClick}><div className="module-topline"><span className="module-number">{module.progress === 100 ? <Check size={15} /> : <BookOpen size={15} />}</span><ChevronRight size={17} /></div><div className="module-content"><p>PARCOURS · {module.lessons} LEÇONS</p><h3>{module.title}</h3><span><Clock3 size={12} /> {module.duration}</span></div><div className="card-progress"><span style={{ width: `${module.progress}%` }} /></div><div className="module-bottom"><span>{module.progress === 0 ? "À commencer" : `${module.progress}% terminé`}</span><ArrowRight size={15} /></div></button>;
+function ModuleCard({ module, locked, onClick, full = false }: { module: Module; locked: boolean; onClick: () => void; full?: boolean }) {
+  return <button type="button" data-testid={`card-module-${module.id}`} className={`module-card module-${module.tone} ${full ? "module-full" : ""}`} onClick={onClick}>
+    <div className="module-topline">
+      <span className="module-number">{locked ? <Lock size={15} /> : module.progress === 100 ? <Check size={15} /> : <BookOpen size={15} />}</span>
+      <ChevronRight size={17} />
+    </div>
+    <div className="module-content"><p>PARCOURS · {module.lessons} LEÇONS</p><h3>{module.title}</h3><span><Clock3 size={12} /> {module.duration}</span></div>
+    <div className="card-progress"><span style={{ width: `${locked ? 0 : module.progress}%` }} /></div>
+    <div className="module-bottom"><span>{locked ? "Ticket requis" : module.progress === 0 ? "À commencer" : `${module.progress}% terminé`}</span><ArrowRight size={15} /></div>
+  </button>;
 }
 
 function ModuleModal({ module, onClose, onComplete }: { module: Module; onClose: () => void; onComplete: (module: Module) => void }) {
