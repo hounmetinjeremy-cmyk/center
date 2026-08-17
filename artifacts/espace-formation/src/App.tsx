@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-// trigger fresh deploy after GitHub incident
 import {
   ArrowRight,
   BookOpen,
@@ -248,13 +247,12 @@ function App() {
           >
             <Coins size={13} /><b>{walletLoading ? "…" : coins}</b>
           </button>
-          <div className="user-bubble" title={user.email ?? undefined}>{user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={17} />}</div>
           </div>
         </header>
 
         <div className="app-content">
           {activeNav === "accueil" && (
-            <HomeView user={user} firstName={firstName} unlocked={unlocked} onGoToFormations={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
+            <HomeView firstName={firstName} unlocked={unlocked} onGoToFormations={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
           )}
           {activeNav === "formations" && (
             <FormationsView
@@ -321,9 +319,9 @@ function App() {
 }
 
 
-function HomeView({ user, firstName, unlocked, onGoToFormations, onGoToAccesPrive }: { user: AppUser; firstName: string; unlocked: boolean; onGoToFormations: () => void; onGoToAccesPrive: () => void }) {
+function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: { firstName: string; unlocked: boolean; onGoToFormations: () => void; onGoToAccesPrive: () => void }) {
   return <div className="view-stack">
-    <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p><span className="email-chip">{user.email}</span></section>
+    <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p></section>
 
     <button type="button" className="progress-card animate-rise" onClick={onGoToFormations} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
       <div><p className="eyebrow">ÉTAPE 1</p><h2>Choisis tes formations</h2><p style={{ margin: "7px 0 0", color: "hsl(42 67% 98% / .62)", fontSize: 10 }}>Coche celles qui t'intéressent.</p></div>
