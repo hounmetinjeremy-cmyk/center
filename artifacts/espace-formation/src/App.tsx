@@ -8,11 +8,14 @@ import {
   Coins,
   Copy,
   Gift,
+  KeyRound,
   LogOut,
   Menu,
   MessageCircle,
   Play,
+  ShieldCheck,
   Sparkles,
+  Ticket,
   Trophy,
   UserRound,
   X,
@@ -21,11 +24,11 @@ import {
 import { AuthView } from "@/components/auth-view";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
-import { simulatePayment, joinWhatsappGroup } from "@/lib/access-api";
+import { payForTicket, redeemTicketCode } from "@/lib/access-api";
 
 type ToastKind = "success" | "warning" | "info";
 type AppUser = { displayName: string; email: string; photoURL?: string | null };
-type NavItem = "accueil" | "formations" | "recompenses";
+type NavItem = "accueil" | "formations" | "portefeuille" | "acces-prive";
 
 interface Module {
   id: string;
@@ -38,7 +41,6 @@ interface Module {
   tone: "coral" | "teal" | "violet";
 }
 
-const WHATSAPP_MODULE_ID = "payment-groups";
 const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 100;
 
@@ -62,16 +64,6 @@ const modules: Module[] = [
     progress: 24,
     reward: 75,
     tone: "teal",
-  },
-  {
-    id: WHATSAPP_MODULE_ID,
-    title: "Relier un paiement à son groupe privé",
-    description: "Découvre comment automatiser les paiements et les accès à une communauté WhatsApp ou Telegram.",
-    lessons: 10,
-    duration: "2 h 20",
-    progress: 0,
-    reward: 120,
-    tone: "violet",
   },
 ];
 
@@ -155,7 +147,9 @@ function App() {
     () => modules.map((module) => completed.includes(module.id) ? { ...module, progress: 100 } : module),
     [completed],
   );
-  const progress = Math.round(visibleModules.reduce((total, module) => total + module.progress, 0) / visibleModules.length);
+  const progress = visibleModules.length
+    ? Math.round(visibleModules.reduce((total, module) => total + module.progress, 0) / visibleModules.length)
+    : 0;
   const firstName = user?.displayName?.split(" ")[0] || "apprenant·e";
 
   const showToast = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
@@ -185,7 +179,6 @@ function App() {
       const claimed = await claimPendingReferral(authUser.uid);
       if (claimed) {
         showToast("Code de parrainage validé, ton ami a reçu ses coins !", "success");
-        // Recharge le solde apres validation du parrainage (au cas ou c'est le parrain qui recharge sa propre session)
         const refreshed = await syncWallet(authUser.uid, null, null, null);
         if (refreshed) setCoins(refreshed.coins);
       }
@@ -256,17 +249,19 @@ function App() {
 
         <div className="app-content">
           {activeNav === "accueil" && (
-            <HomeView user={user} firstName={firstName} progress={progress} coins={coins} modules={visibleModules} onModule={setSelectedModule} onAllModules={() => setActiveNav("formations")} />
+            <HomeView user={user} firstName={firstName} progress={progress} coins={coins} modules={visibleModules} onModule={setSelectedModule} onAllModules={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
           )}
           {activeNav === "formations" && <FormationsView modules={visibleModules} onModule={setSelectedModule} onBack={() => setActiveNav("accueil")} />}
-          {activeNav === "recompenses" && (
-            <RewardsView
-              progress={progress}
+          {activeNav === "portefeuille" && (
+            <WalletView
               coins={coins}
               referralCode={referralCode}
               onCopyReferral={copyReferralLink}
               onToast={showToast}
             />
+          )}
+          {activeNav === "acces-prive" && (
+            <PrivateAccessView userName={user.displayName} onToast={showToast} />
           )}
         </div>
 
@@ -274,7 +269,8 @@ function App() {
           {([
             ["accueil", "Accueil", Sparkles],
             ["formations", "Formations", BookOpen],
-            ["recompenses", "Récompenses", Trophy],
+            ["portefeuille", "Portefeuille", Coins],
+            ["acces-prive", "Accès privé", Ticket],
           ] as const).map(([id, label, Icon]) => (
             <button type="button" key={id} data-testid={`nav-${id}`} className={activeNav === id ? "active" : ""} onClick={() => setActiveNav(id)}><Icon size={18} /><span>{label}</span></button>
           ))}
@@ -297,7 +293,8 @@ function App() {
               </div>
               <div className="menu-actions">
                 <button type="button" onClick={() => { setMenuOpen(false); showToast("Ton profil est à jour.", "info"); }}><UserRound size={17} /><span>Mon profil</span><ChevronRight size={15} /></button>
-                <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("recompenses"); }}><Gift size={17} /><span>Parrainage & coins</span><ChevronRight size={15} /></button>
+                <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("portefeuille"); }}><Coins size={17} /><span>Portefeuille</span><ChevronRight size={15} /></button>
+                <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("acces-prive"); }}><Ticket size={17} /><span>Accès privé</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); showToast("La communauté est prête à t’accueillir.", "info"); }}><MessageCircle size={17} /><span>Communauté</span><ChevronRight size={15} /></button>
                 <button type="button" className="menu-logout" data-testid="button-logout" onClick={() => { setMenuOpen(false); handleLogout(); }}><LogOut size={17} /><span>Se déconnecter</span><ChevronRight size={15} /></button>
               </div>
@@ -307,10 +304,8 @@ function App() {
         {selectedModule && (
           <ModuleModal
             module={selectedModule}
-            userName={user.displayName}
             onClose={() => setSelectedModule(null)}
             onComplete={completeModule}
-            onToast={showToast}
           />
         )}
         {toast && <div className={`toast toast-${toast.kind}`} role="status" data-testid="status-toast"><span>{toast.message}</span><button type="button" aria-label="Fermer le message" data-testid="button-close-toast" onClick={() => setToast(null)}><X size={15} /></button></div>}
@@ -321,12 +316,16 @@ function App() {
 
 
 
-function HomeView({ user, firstName, progress, coins, modules: visibleModules, onModule, onAllModules }: { user: AppUser; firstName: string; progress: number; coins: number; modules: Module[]; onModule: (module: Module) => void; onAllModules: () => void }) {
+function HomeView({ user, firstName, progress, coins, modules: visibleModules, onModule, onAllModules, onGoToAccesPrive }: { user: AppUser; firstName: string; progress: number; coins: number; modules: Module[]; onModule: (module: Module) => void; onAllModules: () => void; onGoToAccesPrive: () => void }) {
   return <div className="view-stack">
     <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p><span className="email-chip">{user.email}</span></section>
     <section className="progress-card animate-rise"><div><p className="eyebrow">TON PARCOURS</p><h2>Tu avances bien.</h2><p>Chaque leçon te rapproche de ton prochain objectif.</p></div><strong>{progress}%</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="coin-balance-row"><span><Coins size={13} /> Solde</span><b data-testid="text-home-coin-balance">{coins} pièces</b></div></section>
     <section className="section-block animate-rise"><div className="section-heading"><div><p className="eyebrow">À DÉCOUVRIR</p><h2>Formations pratiques</h2></div><button type="button" className="text-button" data-testid="button-view-all-formations" onClick={onAllModules}>Tout voir <ArrowRight size={14} /></button></div><div className="module-scroller">{visibleModules.slice(0, 2).map((module) => <ModuleCard key={module.id} module={module} onClick={() => onModule(module)} />)}</div></section>
-    <section className="community-card animate-rise"><span className="community-icon"><MessageCircle size={20} /></span><div><p className="eyebrow">ON APPREND MIEUX ENSEMBLE</p><h3>Le groupe communauté</h3><p>Échange, pose tes questions, reste motivé.</p></div><ArrowRight size={17} /></section>
+    <button type="button" className="community-card animate-rise" onClick={onGoToAccesPrive} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer" }}>
+      <span className="community-icon"><Ticket size={20} /></span>
+      <div><p className="eyebrow">GROUPE PRIVÉ</p><h3>Ton accès WhatsApp</h3><p>Paye ton ticket et rejoins la communauté fermée.</p></div>
+      <ArrowRight size={17} />
+    </button>
   </div>;
 }
 
@@ -334,25 +333,32 @@ function FormationsView({ modules: visibleModules, onModule, onBack }: { modules
   return <div className="view-stack formations-view"><div className="page-heading"><button type="button" className="back-button" data-testid="button-back-home" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button><div><p className="eyebrow">BIBLIOTHÈQUE</p><h1>Toutes les formations</h1></div></div><div className="formation-list">{visibleModules.map((module) => <ModuleCard key={module.id} module={module} onClick={() => onModule(module)} full />)}</div></div>;
 }
 
-function RewardsView({
-  progress,
+// Onglet dedie : portefeuille de coins + programme de parrainage.
+function WalletView({
   coins,
   referralCode,
   onCopyReferral,
   onToast,
 }: {
-  progress: number;
   coins: number;
   referralCode: string | null;
   onCopyReferral: () => void;
   onToast: (message: string, kind?: ToastKind) => void;
 }) {
-  const steps = [
-    { number: "01", Icon: Play, title: "Apprends", copy: "Suis une leçon jusqu’au bout." },
-    { number: "02", Icon: Check, title: "Progresse", copy: "Valide tes étapes." },
-    { number: "03", Icon: Coins, title: "Récolte", copy: "Gagne des pièces." },
-  ];
-  return <div className="view-stack"><div className="page-heading"><div><p className="eyebrow">TON ÉNERGIE</p><h1>Pièces & récompenses</h1></div><span className="reward-icon"><Trophy size={18} /></span></div><section className="reward-card"><Coins size={26} /><p>Ton solde de pièces</p><strong data-testid="text-reward-coin-balance">{coins}</strong><span>Progression globale : {progress}% · chaque effort compte.</span><button type="button" data-testid="button-reward-info" onClick={() => onToast("Les récompenses arrivent avec tes prochaines leçons.", "info")}>Comment ça marche <ArrowRight size={16} /></button></section>
+  return <div className="view-stack">
+    <div className="page-heading">
+      <div><p className="eyebrow">TON PORTEFEUILLE</p><h1>Pièces & parrainage</h1></div>
+      <span className="reward-icon"><Trophy size={18} /></span>
+    </div>
+    <section className="reward-card">
+      <Coins size={26} />
+      <p>Ton solde de pièces</p>
+      <strong data-testid="text-wallet-coin-balance">{coins}</strong>
+      <span>Gagne des coins en parrainant tes amis. Le seuil de retrait sera annoncé bientôt.</span>
+      <button type="button" onClick={() => onToast("Le retrait sera disponible prochainement.", "info")}>
+        Demander un retrait <ArrowRight size={16} />
+      </button>
+    </section>
     <section className="reward-card" data-testid="section-referral">
       <Gift size={26} />
       <p>Parraine tes amis</p>
@@ -366,51 +372,120 @@ function RewardsView({
         <span style={{ opacity: 0.6, fontSize: 10 }}>Chargement de ton code...</span>
       )}
     </section>
-    <section className="steps-card"><p className="eyebrow">TON RITUEL</p><h2>Apprends avec régularité.</h2>{steps.map(({ number, Icon, title, copy }) => <div className="reward-step" key={number}><span>{number}</span><i><Icon size={15} /></i><div><b>{title}</b><small>{copy}</small></div></div>)}</section></div>;
+  </div>;
+}
+
+// Onglet dedie : achat du ticket d'entree, puis saisie du code recu pour valider l'acces.
+function PrivateAccessView({ userName, onToast }: { userName: string; onToast: (message: string, kind?: ToastKind) => void }) {
+  const [step, setStep] = useState<"pay" | "redeem" | "done">("pay");
+  const [ticketCode, setTicketCode] = useState<string | null>(null);
+  const [enteredCode, setEnteredCode] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const handlePay = async () => {
+    setBusy(true);
+    try {
+      const result = await payForTicket(userName);
+      setTicketCode(result.ticketCode);
+      setStep("redeem");
+      onToast("Paiement simulé. Voici ton code ticket !", "success");
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Une erreur est survenue.", "warning");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRedeem = async () => {
+    if (enteredCode.trim().length < 4) {
+      onToast("Entre le code complet reçu après paiement.", "warning");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { inviteUrl } = await redeemTicketCode(enteredCode);
+      setStep("done");
+      onToast("Code validé ! Ouverture du groupe WhatsApp...", "success");
+      window.location.href = inviteUrl;
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Code incorrect.", "warning");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="view-stack">
+    <div className="page-heading">
+      <div><p className="eyebrow">TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div>
+      <span className="reward-icon"><Ticket size={18} /></span>
+    </div>
+
+    <section className="steps-card">
+      <p className="eyebrow">ÉTAPE 1</p>
+      <h2>Paye ton ticket d'entrée</h2>
+      <div className="reward-step">
+        <span>01</span>
+        <i><ShieldCheck size={15} /></i>
+        <div><b>Paiement</b><small>{step === "pay" ? "En attente de paiement" : "Payé ✓"}</small></div>
+      </div>
+      {step === "pay" && (
+        <button type="button" className="primary-button" data-testid="button-pay-ticket" onClick={handlePay} disabled={busy}>
+          {busy ? "Paiement en cours..." : "Payer le ticket"} <ArrowRight size={16} />
+        </button>
+      )}
+    </section>
+
+    {step !== "pay" && (
+      <section className="steps-card">
+        <p className="eyebrow">ÉTAPE 2</p>
+        <h2>Entre ton code ticket</h2>
+        {ticketCode && (
+          <div className="lesson-summary" data-testid="text-ticket-code">
+            <span><KeyRound size={14} /> <b>{ticketCode}</b></span>
+          </div>
+        )}
+        <input
+          type="text"
+          value={enteredCode}
+          onChange={(event) => setEnteredCode(event.target.value.toUpperCase())}
+          placeholder="Ex: A3F7K9"
+          maxLength={6}
+          data-testid="input-ticket-code"
+          className="auth-field-input"
+          style={{
+            width: "100%",
+            marginTop: 10,
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid hsl(var(--border))",
+            fontFamily: "var(--font-mono)",
+            fontSize: 16,
+            letterSpacing: "0.15em",
+            textAlign: "center",
+          }}
+        />
+        <button
+          type="button"
+          className="primary-button"
+          data-testid="button-redeem-ticket"
+          onClick={handleRedeem}
+          disabled={busy || step === "done"}
+          style={{ marginTop: 12 }}
+        >
+          {busy ? "Vérification..." : "Entrer le code et accéder au groupe"} <ArrowRight size={16} />
+        </button>
+      </section>
+    )}
+  </div>;
 }
 
 function ModuleCard({ module, onClick, full = false }: { module: Module; onClick: () => void; full?: boolean }) {
   return <button type="button" data-testid={`card-module-${module.id}`} className={`module-card module-${module.tone} ${full ? "module-full" : ""}`} onClick={onClick}><div className="module-topline"><span className="module-number">{module.progress === 100 ? <Check size={15} /> : <BookOpen size={15} />}</span><ChevronRight size={17} /></div><div className="module-content"><p>PARCOURS · {module.lessons} LEÇONS</p><h3>{module.title}</h3><span><Clock3 size={12} /> {module.duration}</span></div><div className="card-progress"><span style={{ width: `${module.progress}%` }} /></div><div className="module-bottom"><span>{module.progress === 0 ? "À commencer" : `${module.progress}% terminé`}</span><ArrowRight size={15} /></div></button>;
 }
 
-function ModuleModal({
-  module,
-  userName,
-  onClose,
-  onComplete,
-  onToast,
-}: {
-  module: Module;
-  userName: string;
-  onClose: () => void;
-  onComplete: (module: Module) => void;
-  onToast: (message: string, kind?: ToastKind) => void;
-}) {
-  const [joining, setJoining] = useState(false);
-  const isWhatsappModule = module.id === WHATSAPP_MODULE_ID;
-
-  const handleJoinWhatsapp = async () => {
-    setJoining(true);
-    try {
-      await simulatePayment(userName);
-      const { inviteUrl } = await joinWhatsappGroup();
-      onToast("Paiement simulé avec succès, ouverture de WhatsApp...", "success");
-      window.location.href = inviteUrl;
-    } catch (err) {
-      onToast(err instanceof Error ? err.message : "Une erreur est survenue.", "warning");
-    } finally {
-      setJoining(false);
-    }
-  };
-
+function ModuleModal({ module, onClose, onComplete }: { module: Module; onClose: () => void; onComplete: (module: Module) => void }) {
   return <div className="modal-layer"><button type="button" className="modal-scrim" aria-label="Fermer le module" data-testid="button-close-module" onClick={onClose} /><section className={`module-modal module-${module.tone}`} role="dialog" aria-modal="true"><button type="button" className="modal-close" data-testid="button-close-module-inner" onClick={onClose}><X size={17} /></button><p className="eyebrow">FORMATION PRATIQUE</p><h2>{module.title}</h2><p>{module.description}</p><div className="lesson-summary"><span><b>{module.lessons}</b> leçons</span><span><b>{module.duration}</b> à ton rythme</span></div>
-    {isWhatsappModule ? (
-      <button type="button" className="primary-button" data-testid={`button-start-module-${module.id}`} onClick={handleJoinWhatsapp} disabled={joining}>
-        {joining ? "Connexion..." : "Rejoindre le groupe WhatsApp"} <ArrowRight size={16} />
-      </button>
-    ) : (
-      <button type="button" className="primary-button" data-testid={`button-start-module-${module.id}`} onClick={() => onComplete(module)}>{module.progress === 0 ? "Commencer le module" : "Continuer ma leçon"} <ArrowRight size={16} /></button>
-    )}
+    <button type="button" className="primary-button" data-testid={`button-start-module-${module.id}`} onClick={() => onComplete(module)}>{module.progress === 0 ? "Commencer le module" : "Continuer ma leçon"} <ArrowRight size={16} /></button>
   </section></div>;
 }
 
