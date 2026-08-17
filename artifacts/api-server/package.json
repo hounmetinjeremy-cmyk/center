@@ -9,13 +9,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@workspace/api-zod": "workspace:*",
-    "@workspace/db": "workspace:*",
-    "drizzle-orm": "catalog:",
     "hono": "^4.6.14"
   },
   "devDependencies": {
-    "@types/node": "catalog:",
+    "@types/node": "^22.10.5",
+    "typescript": "~5.9.3",
     "wrangler": "^4.20.0"
   }
 }
