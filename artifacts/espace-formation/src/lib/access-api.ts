@@ -10,16 +10,17 @@ async function parseJsonOrThrow(response: Response) {
   return data;
 }
 
-export type AccessStatus = { paid: boolean; paymentMode: string };
+export type TicketStatus = { hasTicket: boolean; paymentMode: string };
 
-export async function fetchAccessStatus(): Promise<AccessStatus> {
+export async function fetchTicketStatus(): Promise<TicketStatus> {
   const res = await fetch(`${ACCESS_API_BASE}/status`, { credentials: "include" });
   return parseJsonOrThrow(res);
 }
 
-export async function simulatePayment(name: string): Promise<{
+export async function payForTicket(name: string): Promise<{
   paid: boolean;
   paymentMode: string;
+  ticketCode: string;
   expiresInSeconds: number;
 }> {
   const res = await fetch(`${ACCESS_API_BASE}/simulate-payment`, {
@@ -31,10 +32,12 @@ export async function simulatePayment(name: string): Promise<{
   return parseJsonOrThrow(res);
 }
 
-export async function joinWhatsappGroup(): Promise<{ inviteUrl: string }> {
-  const res = await fetch(`${ACCESS_API_BASE}/whatsapp`, {
+export async function redeemTicketCode(code: string): Promise<{ inviteUrl: string }> {
+  const res = await fetch(`${ACCESS_API_BASE}/redeem`, {
     method: "POST",
     credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
   });
   return parseJsonOrThrow(res);
 }
