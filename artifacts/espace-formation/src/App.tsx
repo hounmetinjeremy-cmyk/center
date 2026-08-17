@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -9,7 +9,6 @@ import {
   Copy,
   Gift,
   KeyRound,
-  Lock,
   LogOut,
   Menu,
   MessageCircle,
@@ -28,31 +27,27 @@ import { payForTicket, redeemTicketCode } from "@/lib/access-api";
 
 type ToastKind = "success" | "warning" | "info";
 type AppUser = { displayName: string; email: string; photoURL?: string | null };
-type NavItem = "accueil" | "formations" | "portefeuille" | "acces-prive";
+type NavItem = "accueil" | "formations" | "acces-prive" | "portefeuille";
 
-interface Module {
+interface Formation {
   id: string;
   title: string;
   description: string;
   lessons: number;
   duration: string;
-  progress: number;
-  reward: number;
   tone: "coral" | "teal" | "violet";
 }
 
 const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 100;
 
-const modules: Module[] = [
+const formations: Formation[] = [
   {
     id: "facebook-scores",
     title: "Booster sa visibilité avec les scores en direct",
     description: "Apprends à capter l’attention, générer des vues et créer une audience fidèle avec des contenus qui vivent en temps réel.",
     lessons: 8,
     duration: "1 h 40",
-    progress: 68,
-    reward: 50,
     tone: "coral",
   },
   {
@@ -61,8 +56,6 @@ const modules: Module[] = [
     description: "Une méthode pratique pour créer, configurer et monétiser ton propre code promo.",
     lessons: 6,
     duration: "1 h 15",
-    progress: 24,
-    reward: 75,
     tone: "teal",
   },
 ];
@@ -132,14 +125,13 @@ function App() {
       }
     : null;
   const [activeNav, setActiveNav] = useState<NavItem>("accueil");
-  const [selectedModule, setSelectedModule] = useState<Module | null>(null);
-  const [completed, setCompleted] = useState<string[]>([]);
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [coins, setCoins] = useState(0);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
+  const [selectedFormations, setSelectedFormations] = useState<string[]>([]);
 
   useEffect(() => {
     capturePendingReferralFromUrl();
@@ -151,13 +143,6 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const visibleModules = useMemo(
-    () => modules.map((module) => completed.includes(module.id) ? { ...module, progress: 100 } : module),
-    [completed],
-  );
-  const progress = visibleModules.length
-    ? Math.round(visibleModules.reduce((total, module) => total + module.progress, 0) / visibleModules.length)
-    : 0;
   const firstName = user?.displayName?.split(" ")[0] || "apprenant·e";
 
   const showToast = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
@@ -200,32 +185,25 @@ function App() {
   const handleLogout = async () => {
     try {
       await logout();
-      setCompleted([]);
       showToast("Tu es déconnecté·e.", "info");
     } catch {
       showToast("Déconnexion impossible pour le moment.", "warning");
     }
   };
 
-  const completeModule = (module: Module) => {
-    if (!completed.includes(module.id)) {
-      setCompleted((items) => [...items, module.id]);
-      showToast(`Module terminé. Continue pour gagner plus de coins !`);
-    } else {
-      showToast("Tu peux revoir ce module quand tu veux.", "info");
-    }
-    setSelectedModule(null);
+  const toggleFormation = (id: string) => {
+    setSelectedFormations((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
   };
 
-  // Une formation ne s'ouvre que si l'acces global est debloque (ticket paye + code valide).
-  // Sinon, on redirige directement vers l'onglet d'achat du ticket.
-  const handleModuleClick = (module: Module) => {
-    if (!unlocked) {
-      setActiveNav("acces-prive");
-      showToast("Paye ton ticket d'entrée pour débloquer les formations.", "info");
+  // Etape 1 -> Etape 2 : une fois la selection validee, direction le paiement du ticket.
+  const validateSelection = () => {
+    if (selectedFormations.length === 0) {
+      showToast("Sélectionne au moins une formation avant de continuer.", "warning");
       return;
     }
-    setSelectedModule(module);
+    setActiveNav("acces-prive");
   };
 
   const handleUnlocked = async () => {
@@ -283,9 +261,20 @@ function App() {
 
         <div className="app-content">
           {activeNav === "accueil" && (
-            <HomeView user={user} firstName={firstName} progress={progress} coins={coins} unlocked={unlocked} modules={visibleModules} onModule={handleModuleClick} onAllModules={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
+            <HomeView user={user} firstName={firstName} unlocked={unlocked} onGoToFormations={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
           )}
-          {activeNav === "formations" && <FormationsView modules={visibleModules} unlocked={unlocked} onModule={handleModuleClick} onBack={() => setActiveNav("accueil")} />}
+          {activeNav === "formations" && (
+            <FormationsView
+              formations={formations}
+              selected={selectedFormations}
+              onToggle={toggleFormation}
+              onValidate={validateSelection}
+              onBack={() => setActiveNav("accueil")}
+            />
+          )}
+          {activeNav === "acces-prive" && (
+            <PrivateAccessView userName={user.displayName} unlocked={unlocked} onUnlocked={handleUnlocked} onToast={showToast} />
+          )}
           {activeNav === "portefeuille" && (
             <WalletView
               coins={coins}
@@ -294,17 +283,14 @@ function App() {
               onToast={showToast}
             />
           )}
-          {activeNav === "acces-prive" && (
-            <PrivateAccessView userName={user.displayName} unlocked={unlocked} onUnlocked={handleUnlocked} onToast={showToast} />
-          )}
         </div>
 
         <nav className="bottom-nav" aria-label="Navigation principale">
           {([
             ["accueil", "Accueil", Sparkles],
             ["formations", "Formations", BookOpen],
+            ["acces-prive", "Ticket", Ticket],
             ["portefeuille", "Portefeuille", Coins],
-            ["acces-prive", "Accès privé", Ticket],
           ] as const).map(([id, label, Icon]) => (
             <button type="button" key={id} data-testid={`nav-${id}`} className={activeNav === id ? "active" : ""} onClick={() => setActiveNav(id)}><Icon size={18} /><span>{label}</span></button>
           ))}
@@ -326,20 +312,14 @@ function App() {
                 <span><b>{user.displayName}</b><small>{user.email}</small></span>
               </div>
               <div className="menu-actions">
+                <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("formations"); }}><BookOpen size={17} /><span>Formations</span><ChevronRight size={15} /></button>
+                <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("acces-prive"); }}><Ticket size={17} /><span>Ticket d'entrée</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("portefeuille"); }}><Coins size={17} /><span>Portefeuille</span><ChevronRight size={15} /></button>
-                <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("acces-prive"); }}><Ticket size={17} /><span>Accès privé</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); showToast("La communauté est prête à t’accueillir.", "info"); }}><MessageCircle size={17} /><span>Communauté</span><ChevronRight size={15} /></button>
                 <button type="button" className="menu-logout" data-testid="button-logout" onClick={() => { setMenuOpen(false); handleLogout(); }}><LogOut size={17} /><span>Se déconnecter</span><ChevronRight size={15} /></button>
               </div>
             </aside>
           </div>
-        )}
-        {selectedModule && (
-          <ModuleModal
-            module={selectedModule}
-            onClose={() => setSelectedModule(null)}
-            onComplete={completeModule}
-          />
         )}
         {toast && <div className={`toast toast-${toast.kind}`} role="status" data-testid="status-toast"><span>{toast.message}</span><button type="button" aria-label="Fermer le message" data-testid="button-close-toast" onClick={() => setToast(null)}><X size={15} /></button></div>}
       </div>
@@ -348,22 +328,79 @@ function App() {
 }
 
 
-
-function HomeView({ user, firstName, progress, coins, unlocked, modules: visibleModules, onModule, onAllModules, onGoToAccesPrive }: { user: AppUser; firstName: string; progress: number; coins: number; unlocked: boolean; modules: Module[]; onModule: (module: Module) => void; onAllModules: () => void; onGoToAccesPrive: () => void }) {
+// Accueil épuré : plus de barre de progression ni de suivi de leçons.
+// Juste un point d'entrée clair vers la sélection puis le paiement.
+function HomeView({ user, firstName, unlocked, onGoToFormations, onGoToAccesPrive }: { user: AppUser; firstName: string; unlocked: boolean; onGoToFormations: () => void; onGoToAccesPrive: () => void }) {
   return <div className="view-stack">
     <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p><span className="email-chip">{user.email}</span></section>
-    <section className="progress-card animate-rise"><div><p className="eyebrow">TON PARCOURS</p><h2>Tu avances bien.</h2><p>Chaque leçon te rapproche de ton prochain objectif.</p></div><strong>{progress}%</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="coin-balance-row"><span><Coins size={13} /> Solde</span><b data-testid="text-home-coin-balance">{coins} pièces</b></div></section>
-    <section className="section-block animate-rise"><div className="section-heading"><div><p className="eyebrow">À DÉCOUVRIR</p><h2>Formations pratiques</h2></div><button type="button" className="text-button" data-testid="button-view-all-formations" onClick={onAllModules}>Tout voir <ArrowRight size={14} /></button></div><div className="module-scroller">{visibleModules.slice(0, 2).map((module) => <ModuleCard key={module.id} module={module} locked={!unlocked} onClick={() => onModule(module)} />)}</div></section>
+
+    <button type="button" className="progress-card animate-rise" onClick={onGoToFormations} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div><p className="eyebrow">ÉTAPE 1</p><h2>Choisis tes formations</h2><p style={{ margin: "7px 0 0", color: "hsl(42 67% 98% / .62)", fontSize: 10 }}>Coche celles qui t'intéressent.</p></div>
+      <ArrowRight size={20} color="hsl(var(--accent))" />
+    </button>
+
     <button type="button" className="community-card animate-rise" onClick={onGoToAccesPrive} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer" }}>
       <span className="community-icon"><Ticket size={20} /></span>
-      <div><p className="eyebrow">GROUPE PRIVÉ</p><h3>{unlocked ? "Accès débloqué" : "Ton accès WhatsApp"}</h3><p>{unlocked ? "Rejoins la communauté à tout moment." : "Paye ton ticket unique : formations + groupe."}</p></div>
+      <div><p className="eyebrow">ÉTAPE 2 · GROUPE PRIVÉ</p><h3>{unlocked ? "Accès débloqué" : "Payer le ticket d'entrée"}</h3><p>{unlocked ? "Rejoins la communauté à tout moment." : "Un ticket unique : formations + groupe WhatsApp."}</p></div>
       <ArrowRight size={17} />
     </button>
   </div>;
 }
 
-function FormationsView({ modules: visibleModules, unlocked, onModule, onBack }: { modules: Module[]; unlocked: boolean; onModule: (module: Module) => void; onBack: () => void }) {
-  return <div className="view-stack formations-view"><div className="page-heading"><button type="button" className="back-button" data-testid="button-back-home" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button><div><p className="eyebrow">BIBLIOTHÈQUE</p><h1>Toutes les formations</h1></div></div><div className="formation-list">{visibleModules.map((module) => <ModuleCard key={module.id} module={module} locked={!unlocked} onClick={() => onModule(module)} full />)}</div></div>;
+// Etape 1 : selection par cases a cocher de toutes les formations disponibles.
+function FormationsView({
+  formations: list,
+  selected,
+  onToggle,
+  onValidate,
+  onBack,
+}: {
+  formations: Formation[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  onValidate: () => void;
+  onBack: () => void;
+}) {
+  return <div className="view-stack formations-view">
+    <div className="page-heading">
+      <button type="button" className="back-button" data-testid="button-back-home" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button>
+      <div><p className="eyebrow">ÉTAPE 1 · SÉLECTION</p><h1>Choisis tes formations</h1></div>
+    </div>
+    <div className="formation-list">
+      {list.map((formation) => {
+        const checked = selected.includes(formation.id);
+        return (
+          <label
+            key={formation.id}
+            data-testid={`card-formation-${formation.id}`}
+            className={`module-card module-${formation.tone} module-full`}
+            style={{ cursor: "pointer", outline: checked ? "2px solid hsl(var(--primary))" : "none", outlineOffset: 2 }}
+          >
+            <div className="module-topline">
+              <span className="module-number">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(formation.id)}
+                  data-testid={`checkbox-formation-${formation.id}`}
+                  style={{ width: 18, height: 18, accentColor: "hsl(var(--primary))" }}
+                />
+              </span>
+              {checked && <Check size={17} />}
+            </div>
+            <div className="module-content">
+              <p>{formation.lessons} LEÇONS</p>
+              <h3>{formation.title}</h3>
+              <span><Clock3 size={12} /> {formation.duration}</span>
+            </div>
+          </label>
+        );
+      })}
+    </div>
+    <button type="button" className="primary-button" data-testid="button-validate-selection" onClick={onValidate}>
+      Valider ma sélection ({selected.length}) <ArrowRight size={16} />
+    </button>
+  </div>;
 }
 
 // Onglet dedie : portefeuille de coins + programme de parrainage.
@@ -408,7 +445,7 @@ function WalletView({
   </div>;
 }
 
-// Onglet dedie : achat du ticket unique (formations + groupe prive), puis saisie du code.
+// Etape 2 : achat du ticket unique (formations + groupe prive), puis saisie du code.
 function PrivateAccessView({
   userName,
   unlocked,
@@ -449,7 +486,7 @@ function PrivateAccessView({
       const { inviteUrl } = await redeemTicketCode(enteredCode);
       setStep("done");
       onUnlocked();
-      onToast("Code validé ! Formations débloquées, ouverture de WhatsApp...", "success");
+      onToast("Code validé ! Accès débloqué, ouverture de WhatsApp...", "success");
       window.location.href = inviteUrl;
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Code incorrect.", "warning");
@@ -461,7 +498,7 @@ function PrivateAccessView({
   if (step === "done") {
     return <div className="view-stack">
       <div className="page-heading">
-        <div><p className="eyebrow">TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div>
+        <div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div>
         <span className="reward-icon"><Ticket size={18} /></span>
       </div>
       <section className="reward-card">
@@ -475,17 +512,17 @@ function PrivateAccessView({
 
   return <div className="view-stack">
     <div className="page-heading">
-      <div><p className="eyebrow">TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div>
+      <div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div>
       <span className="reward-icon"><Ticket size={18} /></span>
     </div>
 
     <section className="steps-card">
-      <p className="eyebrow">ÉTAPE 1</p>
+      <p className="eyebrow">PAIEMENT</p>
       <h2>Paye ton ticket unique</h2>
       <div className="reward-step">
         <span>01</span>
         <i><ShieldCheck size={15} /></i>
-        <div><b>Paiement</b><small>{step === "pay" ? "Débloque formations + groupe WhatsApp" : "Payé ✓"}</small></div>
+        <div><b>Ticket d'entrée</b><small>{step === "pay" ? "Débloque formations + groupe WhatsApp" : "Payé ✓"}</small></div>
       </div>
       {step === "pay" && (
         <button type="button" className="primary-button" data-testid="button-pay-ticket" onClick={handlePay} disabled={busy}>
@@ -496,7 +533,7 @@ function PrivateAccessView({
 
     {step !== "pay" && (
       <section className="steps-card">
-        <p className="eyebrow">ÉTAPE 2</p>
+        <p className="eyebrow">VALIDATION</p>
         <h2>Entre ton code ticket</h2>
         {ticketCode && (
           <div className="lesson-summary" data-testid="text-ticket-code">
@@ -535,24 +572,6 @@ function PrivateAccessView({
       </section>
     )}
   </div>;
-}
-
-function ModuleCard({ module, locked, onClick, full = false }: { module: Module; locked: boolean; onClick: () => void; full?: boolean }) {
-  return <button type="button" data-testid={`card-module-${module.id}`} className={`module-card module-${module.tone} ${full ? "module-full" : ""}`} onClick={onClick}>
-    <div className="module-topline">
-      <span className="module-number">{locked ? <Lock size={15} /> : module.progress === 100 ? <Check size={15} /> : <BookOpen size={15} />}</span>
-      <ChevronRight size={17} />
-    </div>
-    <div className="module-content"><p>PARCOURS · {module.lessons} LEÇONS</p><h3>{module.title}</h3><span><Clock3 size={12} /> {module.duration}</span></div>
-    <div className="card-progress"><span style={{ width: `${locked ? 0 : module.progress}%` }} /></div>
-    <div className="module-bottom"><span>{locked ? "Ticket requis" : module.progress === 0 ? "À commencer" : `${module.progress}% terminé`}</span><ArrowRight size={15} /></div>
-  </button>;
-}
-
-function ModuleModal({ module, onClose, onComplete }: { module: Module; onClose: () => void; onComplete: (module: Module) => void }) {
-  return <div className="modal-layer"><button type="button" className="modal-scrim" aria-label="Fermer le module" data-testid="button-close-module" onClick={onClose} /><section className={`module-modal module-${module.tone}`} role="dialog" aria-modal="true"><button type="button" className="modal-close" data-testid="button-close-module-inner" onClick={onClose}><X size={17} /></button><p className="eyebrow">FORMATION PRATIQUE</p><h2>{module.title}</h2><p>{module.description}</p><div className="lesson-summary"><span><b>{module.lessons}</b> leçons</span><span><b>{module.duration}</b> à ton rythme</span></div>
-    <button type="button" className="primary-button" data-testid={`button-start-module-${module.id}`} onClick={() => onComplete(module)}>{module.progress === 0 ? "Commencer le module" : "Continuer ma leçon"} <ArrowRight size={16} /></button>
-  </section></div>;
 }
 
 export default App;
