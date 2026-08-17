@@ -19,6 +19,7 @@ import {
 import { AuthView } from "@/components/auth-view";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
+import { simulatePayment, joinWhatsappGroup } from "@/lib/access-api";
 
 type ToastKind = "success" | "warning" | "info";
 type AppUser = { displayName: string; email: string; photoURL?: string | null };
@@ -36,6 +37,7 @@ interface Module {
 }
 
 const COINS_STORAGE_KEY = "espace-formation:coins";
+const WHATSAPP_MODULE_ID = "payment-groups";
 
 const modules: Module[] = [
   {
@@ -59,7 +61,7 @@ const modules: Module[] = [
     tone: "teal",
   },
   {
-    id: "payment-groups",
+    id: WHATSAPP_MODULE_ID,
     title: "Relier un paiement à son groupe privé",
     description: "Découvre comment automatiser les paiements et les accès à une communauté WhatsApp ou Telegram.",
     lessons: 10,
@@ -74,7 +76,7 @@ function App() {
   const { user: authUser, loading: authLoading, logout } = useAuth();
   const user: AppUser | null = authUser
     ? {
-        displayName: authUser.displayName?.trim() || "Apprenant\u00b7e",
+        displayName: authUser.displayName?.trim() || "Apprenant·e",
         email: authUser.email ?? "",
         photoURL: authUser.photoURL ?? null,
       }
@@ -221,7 +223,15 @@ function App() {
             </aside>
           </div>
         )}
-        {selectedModule && <ModuleModal module={selectedModule} onClose={() => setSelectedModule(null)} onComplete={completeModule} />}
+        {selectedModule && (
+          <ModuleModal
+            module={selectedModule}
+            userName={user.displayName}
+            onClose={() => setSelectedModule(null)}
+            onComplete={completeModule}
+            onToast={showToast}
+          />
+        )}
         {toast && <div className={`toast toast-${toast.kind}`} role="status" data-testid="status-toast"><span>{toast.message}</span><button type="button" aria-label="Fermer le message" data-testid="button-close-toast" onClick={() => setToast(null)}><X size={15} /></button></div>}
       </div>
     </main>
@@ -256,8 +266,45 @@ function ModuleCard({ module, onClick, full = false }: { module: Module; onClick
   return <button type="button" data-testid={`card-module-${module.id}`} className={`module-card module-${module.tone} ${full ? "module-full" : ""}`} onClick={onClick}><div className="module-topline"><span className="module-number">{module.progress === 100 ? <Check size={15} /> : <BookOpen size={15} />}</span><ChevronRight size={17} /></div><div className="module-content"><p>PARCOURS · {module.lessons} LEÇONS</p><h3>{module.title}</h3><span><Clock3 size={12} /> {module.duration}</span></div><div className="card-progress"><span style={{ width: `${module.progress}%` }} /></div><div className="module-bottom"><span>{module.progress === 0 ? "À commencer" : `${module.progress}% terminé`}</span><ArrowRight size={15} /></div></button>;
 }
 
-function ModuleModal({ module, onClose, onComplete }: { module: Module; onClose: () => void; onComplete: (module: Module) => void }) {
-  return <div className="modal-layer"><button type="button" className="modal-scrim" aria-label="Fermer le module" data-testid="button-close-module" onClick={onClose} /><section className={`module-modal module-${module.tone}`} role="dialog" aria-modal="true"><button type="button" className="modal-close" data-testid="button-close-module-inner" onClick={onClose}><X size={17} /></button><p className="eyebrow">FORMATION PRATIQUE</p><h2>{module.title}</h2><p>{module.description}</p><div className="lesson-summary"><span><b>{module.lessons}</b> leçons</span><span><b>{module.duration}</b> à ton rythme</span></div><button type="button" className="primary-button" data-testid={`button-start-module-${module.id}`} onClick={() => onComplete(module)}>{module.progress === 0 ? "Commencer le module" : "Continuer ma leçon"} <ArrowRight size={16} /></button></section></div>;
+function ModuleModal({
+  module,
+  userName,
+  onClose,
+  onComplete,
+  onToast,
+}: {
+  module: Module;
+  userName: string;
+  onClose: () => void;
+  onComplete: (module: Module) => void;
+  onToast: (message: string, kind?: ToastKind) => void;
+}) {
+  const [joining, setJoining] = useState(false);
+  const isWhatsappModule = module.id === WHATSAPP_MODULE_ID;
+
+  const handleJoinWhatsapp = async () => {
+    setJoining(true);
+    try {
+      await simulatePayment(userName);
+      const { inviteUrl } = await joinWhatsappGroup();
+      onToast("Paiement simulé avec succès, ouverture de WhatsApp...", "success");
+      window.location.href = inviteUrl;
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Une erreur est survenue.", "warning");
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  return <div className="modal-layer"><button type="button" className="modal-scrim" aria-label="Fermer le module" data-testid="button-close-module" onClick={onClose} /><section className={`module-modal module-${module.tone}`} role="dialog" aria-modal="true"><button type="button" className="modal-close" data-testid="button-close-module-inner" onClick={onClose}><X size={17} /></button><p className="eyebrow">FORMATION PRATIQUE</p><h2>{module.title}</h2><p>{module.description}</p><div className="lesson-summary"><span><b>{module.lessons}</b> leçons</span><span><b>{module.duration}</b> à ton rythme</span></div>
+    {isWhatsappModule ? (
+      <button type="button" className="primary-button" data-testid={`button-start-module-${module.id}`} onClick={handleJoinWhatsapp} disabled={joining}>
+        {joining ? "Connexion..." : "Rejoindre le groupe WhatsApp"} <ArrowRight size={16} />
+      </button>
+    ) : (
+      <button type="button" className="primary-button" data-testid={`button-start-module-${module.id}`} onClick={() => onComplete(module)}>{module.progress === 0 ? "Commencer le module" : "Continuer ma leçon"} <ArrowRight size={16} /></button>
+    )}
+  </section></div>;
 }
 
 export default App;
