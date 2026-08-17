@@ -425,3 +425,63 @@ html, body, #root { height: 100%; max-height: 100%; overflow: hidden; overscroll
 .auth-hint { display: flex; align-items: center; gap: 0.35rem; margin: 0; color: hsl(var(--muted-foreground)); font-size: 0.78rem; }
 .auth-spin { animation: auth-spin 1s linear infinite; }
 @keyframes auth-spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Menu principal : version affinee, plus "pro".
+   ============================================================ */
+.menu-panel {
+  padding: 18px;
+  border-radius: 26px;
+  box-shadow: 0 24px 60px hsl(var(--ink) / .25), 0 2px 8px hsl(var(--ink) / .06);
+}
+.menu-panel-header h2 {
+  font-weight: 700;
+  letter-spacing: -.04em;
+}
+.menu-panel-header .eyebrow {
+  color: hsl(var(--primary));
+}
+.menu-close {
+  transition: background .15s ease, transform .15s ease;
+}
+.menu-close:hover {
+  background: hsl(var(--muted));
+  transform: rotate(90deg);
+}
+.menu-profile {
+  gap: 12px;
+  margin-top: 18px;
+  padding: 13px 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, hsl(var(--teal) / .12), hsl(var(--primary) / .06));
+}
+.menu-profile-avatar {
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px hsl(var(--ink) / .12);
+}
+.menu-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.menu-profile b { font-size: 12px; font-weight: 700; }
+.menu-actions {
+  gap: 3px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid hsl(var(--border) / .7);
+}
+.menu-actions button {
+  border-radius: 13px;
+  font-weight: 600;
+  transition: background .15s ease, transform .12s ease, padding-left .15s ease;
+}
+.menu-actions button:hover {
+  background: hsl(var(--muted));
+  padding-left: 12px;
+}
+.menu-actions button svg:first-child {
+  color: hsl(var(--primary));
+}
+.menu-actions button.menu-logout svg:first-child {
+  color: hsl(var(--primary));
+}
