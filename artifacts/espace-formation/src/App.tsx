@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Clock3,
   Coins,
+  Copy,
+  Gift,
   LogOut,
   Menu,
   MessageCircle,
@@ -36,8 +38,9 @@ interface Module {
   tone: "coral" | "teal" | "violet";
 }
 
-const COINS_STORAGE_KEY = "espace-formation:coins";
 const WHATSAPP_MODULE_ID = "payment-groups";
+const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
+const REFERRAL_REWARD_COINS = 100;
 
 const modules: Module[] = [
   {
@@ -72,6 +75,44 @@ const modules: Module[] = [
   },
 ];
 
+// Récupère le code de parrainage depuis l'URL (?ref=CODE) et le garde en attente
+// jusqu'à ce que la personne se connecte, où il sera automatiquement validé.
+function capturePendingReferralFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const ref = params.get("ref");
+  if (ref) {
+    window.localStorage.setItem(PENDING_REFERRAL_KEY, ref.trim().toUpperCase());
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+}
+
+async function ensureReferralCode(uid: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc("ensure_referral_code", { p_user_id: uid });
+  if (error) {
+    console.warn("ensure_referral_code:", error.message);
+    return null;
+  }
+  return (data as string) ?? null;
+}
+
+async function claimPendingReferral(uid: string): Promise<boolean> {
+  const pendingCode = window.localStorage.getItem(PENDING_REFERRAL_KEY);
+  if (!pendingCode) return false;
+  const { data, error } = await supabase.rpc("claim_referral", { p_user_id: uid, p_code: pendingCode });
+  window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+  if (error) {
+    console.warn("claim_referral:", error.message);
+    return false;
+  }
+  return Boolean(data);
+}
+
+async function fetchCoinsBalance(uid: string): Promise<number | null> {
+  const { data, error } = await supabase.from("profiles").select("coins").eq("id", uid).maybeSingle();
+  if (error || !data) return null;
+  return (data as { coins: number }).coins;
+}
+
 function App() {
   const { user: authUser, loading: authLoading, logout } = useAuth();
   const user: AppUser | null = authUser
@@ -87,15 +128,12 @@ function App() {
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [coins, setCoins] = useState(0);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
 
+  // Capture un eventuel code de parrainage dans l'URL, meme avant connexion.
   useEffect(() => {
-    const stored = Number(window.localStorage.getItem(COINS_STORAGE_KEY));
-    if (Number.isFinite(stored) && stored > 0) setCoins(stored);
+    capturePendingReferralFromUrl();
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(COINS_STORAGE_KEY, String(coins));
-  }, [coins]);
 
   useEffect(() => {
     if (!toast) return;
@@ -110,27 +148,40 @@ function App() {
   const progress = Math.round(visibleModules.reduce((total, module) => total + module.progress, 0) / visibleModules.length);
   const firstName = user?.displayName?.split(" ")[0] || "apprenant·e";
 
-  // Supabase = base de donnees : le profil est synchronise apres la connexion Firebase.
+  const showToast = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
+
+  // Supabase = base de donnees : profil, portefeuille de coins et parrainage
+  // sont synchronises apres la connexion Firebase.
   useEffect(() => {
     if (!authUser) return;
-    void supabase
-      .from("profiles")
-      .upsert(
-        {
-          id: authUser.uid,
-          email: authUser.email,
-          display_name: authUser.displayName ?? null,
-          avatar_url: authUser.photoURL ?? null,
-        },
-        { onConflict: "id" },
-      )
-      .then(({ error }) => {
-        if (error) console.warn("Supabase profile sync:", error.message);
-      });
+
+    (async () => {
+      const { error: upsertError } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: authUser.uid,
+            email: authUser.email,
+            display_name: authUser.displayName ?? null,
+            avatar_url: authUser.photoURL ?? null,
+          },
+          { onConflict: "id" },
+        );
+      if (upsertError) console.warn("Supabase profile sync:", upsertError.message);
+
+      const code = await ensureReferralCode(authUser.uid);
+      setReferralCode(code);
+
+      const claimed = await claimPendingReferral(authUser.uid);
+      if (claimed) {
+        showToast("Code de parrainage validé, ton ami a reçu ses coins !", "success");
+      }
+
+      const balance = await fetchCoinsBalance(authUser.uid);
+      if (balance !== null) setCoins(balance);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.uid]);
-
-  const showToast = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
 
   const handleLogout = async () => {
     try {
@@ -145,12 +196,22 @@ function App() {
   const completeModule = (module: Module) => {
     if (!completed.includes(module.id)) {
       setCompleted((items) => [...items, module.id]);
-      setCoins((balance) => balance + module.reward);
-      showToast(`Module terminé. +${module.reward} pièces ajoutées !`);
+      showToast(`Module terminé. Continue pour gagner plus de coins !`);
     } else {
       showToast("Tu peux revoir ce module quand tu veux.", "info");
     }
     setSelectedModule(null);
+  };
+
+  const copyReferralLink = async () => {
+    if (!referralCode) return;
+    const link = `${window.location.origin}${window.location.pathname}?ref=${referralCode}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast("Lien de parrainage copié !", "success");
+    } catch {
+      showToast(link, "info");
+    }
   };
 
   if (authLoading) {
@@ -186,7 +247,15 @@ function App() {
             <HomeView user={user} firstName={firstName} progress={progress} coins={coins} modules={visibleModules} onModule={setSelectedModule} onAllModules={() => setActiveNav("formations")} />
           )}
           {activeNav === "formations" && <FormationsView modules={visibleModules} onModule={setSelectedModule} onBack={() => setActiveNav("accueil")} />}
-          {activeNav === "recompenses" && <RewardsView progress={progress} coins={coins} onToast={showToast} />}
+          {activeNav === "recompenses" && (
+            <RewardsView
+              progress={progress}
+              coins={coins}
+              referralCode={referralCode}
+              onCopyReferral={copyReferralLink}
+              onToast={showToast}
+            />
+          )}
         </div>
 
         <nav className="bottom-nav" aria-label="Navigation principale">
@@ -216,8 +285,8 @@ function App() {
               </div>
               <div className="menu-actions">
                 <button type="button" onClick={() => { setMenuOpen(false); showToast("Ton profil est à jour.", "info"); }}><UserRound size={17} /><span>Mon profil</span><ChevronRight size={15} /></button>
+                <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("recompenses"); }}><Gift size={17} /><span>Parrainage & coins</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); showToast("La communauté est prête à t’accueillir.", "info"); }}><MessageCircle size={17} /><span>Communauté</span><ChevronRight size={15} /></button>
-                <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("recompenses"); }}><Trophy size={17} /><span>Récompenses</span><ChevronRight size={15} /></button>
                 <button type="button" className="menu-logout" data-testid="button-logout" onClick={() => { setMenuOpen(false); handleLogout(); }}><LogOut size={17} /><span>Se déconnecter</span><ChevronRight size={15} /></button>
               </div>
             </aside>
@@ -253,13 +322,39 @@ function FormationsView({ modules: visibleModules, onModule, onBack }: { modules
   return <div className="view-stack formations-view"><div className="page-heading"><button type="button" className="back-button" data-testid="button-back-home" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button><div><p className="eyebrow">BIBLIOTHÈQUE</p><h1>Toutes les formations</h1></div></div><div className="formation-list">{visibleModules.map((module) => <ModuleCard key={module.id} module={module} onClick={() => onModule(module)} full />)}</div></div>;
 }
 
-function RewardsView({ progress, coins, onToast }: { progress: number; coins: number; onToast: (message: string, kind?: ToastKind) => void }) {
+function RewardsView({
+  progress,
+  coins,
+  referralCode,
+  onCopyReferral,
+  onToast,
+}: {
+  progress: number;
+  coins: number;
+  referralCode: string | null;
+  onCopyReferral: () => void;
+  onToast: (message: string, kind?: ToastKind) => void;
+}) {
   const steps = [
     { number: "01", Icon: Play, title: "Apprends", copy: "Suis une leçon jusqu’au bout." },
     { number: "02", Icon: Check, title: "Progresse", copy: "Valide tes étapes." },
     { number: "03", Icon: Coins, title: "Récolte", copy: "Gagne des pièces." },
   ];
-  return <div className="view-stack"><div className="page-heading"><div><p className="eyebrow">TON ÉNERGIE</p><h1>Pièces & récompenses</h1></div><span className="reward-icon"><Trophy size={18} /></span></div><section className="reward-card"><Coins size={26} /><p>Ton solde de pièces</p><strong data-testid="text-reward-coin-balance">{coins}</strong><span>Progression globale : {progress}% · chaque effort compte.</span><button type="button" data-testid="button-reward-info" onClick={() => onToast("Les récompenses arrivent avec tes prochaines leçons.", "info")}>Comment ça marche <ArrowRight size={16} /></button></section><section className="steps-card"><p className="eyebrow">TON RITUEL</p><h2>Apprends avec régularité.</h2>{steps.map(({ number, Icon, title, copy }) => <div className="reward-step" key={number}><span>{number}</span><i><Icon size={15} /></i><div><b>{title}</b><small>{copy}</small></div></div>)}</section></div>;
+  return <div className="view-stack"><div className="page-heading"><div><p className="eyebrow">TON ÉNERGIE</p><h1>Pièces & récompenses</h1></div><span className="reward-icon"><Trophy size={18} /></span></div><section className="reward-card"><Coins size={26} /><p>Ton solde de pièces</p><strong data-testid="text-reward-coin-balance">{coins}</strong><span>Progression globale : {progress}% · chaque effort compte.</span><button type="button" data-testid="button-reward-info" onClick={() => onToast("Les récompenses arrivent avec tes prochaines leçons.", "info")}>Comment ça marche <ArrowRight size={16} /></button></section>
+    <section className="reward-card" data-testid="section-referral">
+      <Gift size={26} />
+      <p>Parraine tes amis</p>
+      <strong>+{REFERRAL_REWARD_COINS} coins</strong>
+      <span>Par filleul·e qui rejoint l’espace de formation avec ton lien.</span>
+      {referralCode ? (
+        <button type="button" data-testid="button-copy-referral" onClick={onCopyReferral}>
+          <Copy size={15} /> Copier mon lien ({referralCode})
+        </button>
+      ) : (
+        <span style={{ opacity: 0.6, fontSize: 10 }}>Chargement de ton code...</span>
+      )}
+    </section>
+    <section className="steps-card"><p className="eyebrow">TON RITUEL</p><h2>Apprends avec régularité.</h2>{steps.map(({ number, Icon, title, copy }) => <div className="reward-step" key={number}><span>{number}</span><i><Icon size={15} /></i><div><b>{title}</b><small>{copy}</small></div></div>)}</section></div>;
 }
 
 function ModuleCard({ module, onClick, full = false }: { module: Module; onClick: () => void; full?: boolean }) {
