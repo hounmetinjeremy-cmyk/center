@@ -1,16 +1,14 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
-// TODO: remplace ces valeurs par la config de ton NOUVEAU projet Firebase.
-// Firebase Console → Paramètres du projet (⚙️) → Vos applications → Config SDK
 const firebaseConfig = {
-  apiKey: "REMPLACE_MOI",
-  authDomain: "REMPLACE_MOI.firebaseapp.com",
-  projectId: "REMPLACE_MOI",
-  storageBucket: "REMPLACE_MOI.firebasestorage.app",
-  messagingSenderId: "REMPLACE_MOI",
-  appId: "REMPLACE_MOI",
-  measurementId: "REMPLACE_MOI",
+  apiKey: "AIzaSyC62ADYoetwyQISP9w4P9E7Izc7gZ2AXZc",
+  authDomain: "forma-198b8.firebaseapp.com",
+  projectId: "forma-198b8",
+  storageBucket: "forma-198b8.firebasestorage.app",
+  messagingSenderId: "1009313942023",
+  appId: "1:1009313942023:web:0f9aefa603ad4c874478a2",
+  measurementId: "G-7FWP987G8X",
 };
 
 const app = initializeApp(firebaseConfig);
