@@ -462,6 +462,16 @@ function PrivateAccessView({
     }
   };
 
+  const handleCopyCode = async () => {
+    if (!ticketCode) return;
+    try {
+      await navigator.clipboard.writeText(ticketCode);
+      onToast("Code copié !", "success");
+    } catch {
+      onToast(`Ton code : ${ticketCode}`, "info");
+    }
+  };
+
   const handleRedeem = async () => {
     if (enteredCode.trim().length < 4) {
       onToast("Entre le code complet reçu après paiement.", "warning");
@@ -522,8 +532,16 @@ function PrivateAccessView({
         <p className="eyebrow">VALIDATION</p>
         <h2>Entre ton code ticket</h2>
         {ticketCode && (
-          <div className="lesson-summary" data-testid="text-ticket-code">
-            <span><KeyRound size={14} /> <b>{ticketCode}</b></span>
+          <div
+            className="lesson-summary"
+            data-testid="text-ticket-code"
+            style={{ alignItems: "center", cursor: "pointer" }}
+            onClick={handleCopyCode}
+          >
+            <span style={{ flex: 1 }}><KeyRound size={14} /> <b style={{ letterSpacing: "0.1em" }}>{ticketCode}</b></span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
+              <Copy size={13} /> Copier
+            </span>
           </div>
         )}
         <input
