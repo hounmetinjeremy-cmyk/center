@@ -86,13 +86,28 @@ function capturePendingReferralFromUrl() {
   }
 }
 
-async function ensureReferralCode(uid: string): Promise<string | null> {
-  const { data, error } = await supabase.rpc("ensure_referral_code", { p_user_id: uid });
+// Cree/met a jour le profil ET renvoie le solde de coins + le code de parrainage,
+// en un seul appel a une fonction "security definer" (contourne les policies RLS
+// qui exigent normalement une session Supabase Auth, absente ici car on utilise Firebase).
+async function syncWallet(
+  uid: string,
+  email: string | null,
+  displayName: string | null,
+  avatarUrl: string | null,
+): Promise<{ coins: number; referralCode: string | null } | null> {
+  const { data, error } = await supabase.rpc("sync_wallet", {
+    p_user_id: uid,
+    p_email: email,
+    p_display_name: displayName,
+    p_avatar_url: avatarUrl,
+  });
   if (error) {
-    console.warn("ensure_referral_code:", error.message);
+    console.warn("sync_wallet:", error.message);
     return null;
   }
-  return (data as string) ?? null;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  return { coins: row.coins ?? 0, referralCode: row.referral_code ?? null };
 }
 
 async function claimPendingReferral(uid: string): Promise<boolean> {
@@ -105,12 +120,6 @@ async function claimPendingReferral(uid: string): Promise<boolean> {
     return false;
   }
   return Boolean(data);
-}
-
-async function fetchCoinsBalance(uid: string): Promise<number | null> {
-  const { data, error } = await supabase.from("profiles").select("coins").eq("id", uid).maybeSingle();
-  if (error || !data) return null;
-  return (data as { coins: number }).coins;
 }
 
 function App() {
@@ -129,6 +138,7 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [coins, setCoins] = useState(0);
   const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
 
   // Capture un eventuel code de parrainage dans l'URL, meme avant connexion.
   useEffect(() => {
@@ -151,34 +161,36 @@ function App() {
   const showToast = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
 
   // Supabase = base de donnees : profil, portefeuille de coins et parrainage
-  // sont synchronises apres la connexion Firebase.
+  // sont synchronises apres la connexion Firebase, via une fonction securisee
+  // (les policies RLS classiques ne s'appliquent pas car il n'y a pas de session Supabase Auth).
   useEffect(() => {
     if (!authUser) return;
 
+    setWalletLoading(true);
     (async () => {
-      const { error: upsertError } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: authUser.uid,
-            email: authUser.email,
-            display_name: authUser.displayName ?? null,
-            avatar_url: authUser.photoURL ?? null,
-          },
-          { onConflict: "id" },
-        );
-      if (upsertError) console.warn("Supabase profile sync:", upsertError.message);
+      const wallet = await syncWallet(
+        authUser.uid,
+        authUser.email ?? null,
+        authUser.displayName ?? null,
+        authUser.photoURL ?? null,
+      );
 
-      const code = await ensureReferralCode(authUser.uid);
-      setReferralCode(code);
+      if (wallet) {
+        setCoins(wallet.coins);
+        setReferralCode(wallet.referralCode);
+      } else {
+        showToast("Impossible de charger ton portefeuille pour le moment.", "warning");
+      }
 
       const claimed = await claimPendingReferral(authUser.uid);
       if (claimed) {
         showToast("Code de parrainage validé, ton ami a reçu ses coins !", "success");
+        // Recharge le solde apres validation du parrainage (au cas ou c'est le parrain qui recharge sa propre session)
+        const refreshed = await syncWallet(authUser.uid, null, null, null);
+        if (refreshed) setCoins(refreshed.coins);
       }
 
-      const balance = await fetchCoinsBalance(authUser.uid);
-      if (balance !== null) setCoins(balance);
+      setWalletLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.uid]);
@@ -237,7 +249,7 @@ function App() {
           <button type="button" className="icon-button" data-testid="button-open-menu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><Menu size={20} /></button>
           <div className="brand-lockup"><span className="brand-mark"><Sparkles size={14} /></span><span>Espace <b>formation</b></span></div>
           <div className="topbar-right">
-          <span className="coin-chip" data-testid="text-coin-balance" title="Ton solde de pièces"><Coins size={13} /><b>{coins}</b></span>
+          <span className="coin-chip" data-testid="text-coin-balance" title="Ton solde de pièces"><Coins size={13} /><b>{walletLoading ? "…" : coins}</b></span>
           <div className="user-bubble" title={user.email ?? undefined}>{user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={17} />}</div>
           </div>
         </header>
