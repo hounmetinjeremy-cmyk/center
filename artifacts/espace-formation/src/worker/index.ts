@@ -1,27 +1,109 @@
 /**
  * Worker "center" : sert le site statique (React) via env.ASSETS.fetch,
- * SAUF pour /api/fedapay/* qu'il intercepte pour relayer la cle secrete
- * FedaPay (stockee ici, dans les secrets Cloudflare) vers la fonction
- * Supabase qui fait le vrai travail (creation de transaction, etc.).
- *
- * La cle ne quitte jamais Cloudflare -> Supabase que via un header HTTPS,
- * jamais visible cote navigateur.
+ * SAUF pour /api/fedapay/* qu'il intercepte pour :
+ *  - relayer la cle secrete FedaPay (paiement) vers Supabase, sans jamais
+ *    l'exposer au navigateur ;
+ *  - recevoir et VERIFIER les webhooks FedaPay (confirmation instantanee
+ *    de paiement), avec la cle webhook, elle aussi stockee uniquement ici.
  */
 
 export interface Env {
   ASSETS: Fetcher;
   FEDAPAY_SECRET_KEY: string;
+  FEDAPAY_WEBHOOK_KEY: string;
 }
 
 const SUPABASE_FUNCTION_BASE = "https://uvkpqgihomwgszhrapda.supabase.co/functions/v1/access";
+const SUPABASE_CENTER_FUNCTION_BASE = "https://iykryokvyrbdznbdxxjo.supabase.co/functions/v1/access";
+
+async function hmacSha256Hex(key: string, message: string): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(key),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+// FedaPay signe ses webhooks via l'en-tete "FedaPay-Signature": "t=<timestamp>,s=<signature_hex>"
+// signature = HMAC-SHA256(cle_webhook, `${timestamp}.${corps_brut}`)
+async function verifyFedaPaySignature(rawBody: string, signatureHeader: string | null, webhookKey: string): Promise<boolean> {
+  if (!signatureHeader || !webhookKey) return false;
+
+  const parts = Object.fromEntries(
+    signatureHeader.split(",").map((p) => {
+      const [k, v] = p.split("=");
+      return [k?.trim(), v?.trim()];
+    }),
+  );
+  const timestamp = parts["t"];
+  const signature = parts["s"];
+  if (!timestamp || !signature) return false;
+
+  const expected = await hmacSha256Hex(webhookKey, `${timestamp}.${rawBody}`);
+  return expected === signature;
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    // ─── Webhook FedaPay : confirmation instantanee, appele directement par FedaPay ───
+    if (url.pathname === "/api/fedapay/webhook" && request.method === "POST") {
+      const rawBody = await request.text();
+      const signatureHeader = request.headers.get("fedapay-signature") ?? request.headers.get("FedaPay-Signature");
+
+      const valid = await verifyFedaPaySignature(rawBody, signatureHeader, env.FEDAPAY_WEBHOOK_KEY);
+      if (!valid) {
+        return new Response(JSON.stringify({ error: "Signature invalide" }), { status: 401 });
+      }
+
+      let event: Record<string, unknown> = {};
+      try {
+        event = JSON.parse(rawBody);
+      } catch {
+        return new Response(JSON.stringify({ received: true }), { status: 200 });
+      }
+
+      const data = event.data as Record<string, unknown> | undefined;
+      const rawId = data?.id ?? (event.transaction as Record<string, unknown> | undefined)?.id;
+      const transactionId = rawId != null ? Number(rawId) : null;
+      const eventName = String(event.name ?? "");
+      const status = eventName.includes("approved")
+        ? "approved"
+        : eventName.includes("declined")
+          ? "declined"
+          : eventName.includes("canceled")
+            ? "canceled"
+            : null;
+
+      if (transactionId && status) {
+        // Ecrit directement dans Supabase (PostgREST) : cet appel est
+        // serveur-a-serveur (FedaPay -> Cloudflare -> Supabase), jamais
+        // expose au navigateur.
+        await fetch(`https://iykryokvyrbdznbdxxjo.supabase.co/rest/v1/fedapay_transactions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+            "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5a3J5b2t2eXJiZHpuYmR4eGpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMjg2MDUsImV4cCI6MjEwMTcwNDYwNX0.2dlNDYxBcR9HYoBpNGbnnrdXIyd1qkH6ZE1M9S8OUIE",
+          },
+          body: JSON.stringify({ transaction_id: transactionId, status, updated_at: new Date().toISOString() }),
+        });
+      }
+
+      return new Response(JSON.stringify({ received: true }), { status: 200 });
+    }
+
+    // ─── Reste des appels de paiement : relais avec la cle secrete FedaPay ───
     if (url.pathname.startsWith("/api/fedapay/")) {
       const targetPath = url.pathname.replace("/api/fedapay", "");
-      const targetUrl = `${SUPABASE_FUNCTION_BASE}${targetPath}${url.search}`;
+      const targetUrl = `${SUPABASE_CENTER_FUNCTION_BASE}${targetPath}${url.search}`;
 
       const forwardedHeaders = new Headers(request.headers);
       forwardedHeaders.set("X-Fedapay-Secret", env.FEDAPAY_SECRET_KEY ?? "");
@@ -34,17 +116,12 @@ export default {
       });
 
       const response = await fetch(forwardedRequest);
-
-      // Recopie la reponse avec les en-tetes CORS necessaires pour le navigateur.
       const responseBody = await response.text();
       const responseHeaders = new Headers(response.headers);
       responseHeaders.set("Access-Control-Allow-Origin", request.headers.get("origin") ?? "*");
       responseHeaders.set("Access-Control-Allow-Credentials", "true");
 
-      return new Response(responseBody, {
-        status: response.status,
-        headers: responseHeaders,
-      });
+      return new Response(responseBody, { status: response.status, headers: responseHeaders });
     }
 
     return env.ASSETS.fetch(request);
