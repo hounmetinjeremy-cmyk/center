@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -50,7 +50,8 @@ interface Operator {
 
 interface Country {
   id: string;
-  code: string;
+  code: string;       // code ISO 2 lettres minuscules (ex: "bj") — utilisé pour l'affichage du drapeau
+  isoCode: string;    // code ISO 2 lettres MAJUSCULES (ex: "BJ") — envoyé à FedaPay
   flag: string;
   dialCode: string;
   name: string;
@@ -61,11 +62,11 @@ interface Country {
 const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 100;
 
-// 6 pays no-redirect confirmes par FedaPay (paiement Mobile Money direct, sans page externe).
-// "Momo Test" (momo_test) present partout : permet de tester en Sandbox sans vrai numero.
+// 6 pays no-redirect confirmés par FedaPay (paiement Mobile Money direct, sans page externe).
+// "Momo Test" (momo_test) présent partout : permet de tester en Sandbox sans vrai numéro.
 const COUNTRIES: Country[] = [
   {
-    id: "BEN", code: "bj", flag: "🇧🇯", dialCode: "229", name: "Bénin", phonePlaceholder: "01XXXXXXXX",
+    id: "BEN", code: "bj", isoCode: "BJ", flag: "🇧🇯", dialCode: "229", name: "Bénin", phonePlaceholder: "01XXXXXXXX",
     operators: [
       { label: "MTN", mode: "mtn_open", color: "#FFD700" },
       { label: "MOOV", mode: "moov", color: "#FF6B1A" },
@@ -74,36 +75,36 @@ const COUNTRIES: Country[] = [
     ],
   },
   {
-    id: "TGO", code: "tg", flag: "🇹🇬", dialCode: "228", name: "Togo", phonePlaceholder: "90123456",
+    id: "TGO", code: "tg", isoCode: "TG", flag: "🇹🇬", dialCode: "228", name: "Togo", phonePlaceholder: "90123456",
     operators: [
       { label: "MOOV", mode: "moov_tg", color: "#FF6B1A" },
-      { label: "Togocom", mode: "togocel", color: "#0070C0" },
+      { label: "Togocom", mode: "togocell", color: "#0070C0" },
       { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
-    id: "CIV", code: "ci", flag: "🇨🇮", dialCode: "225", name: "Côte d'Ivoire", phonePlaceholder: "0712345678",
+    id: "CIV", code: "ci", isoCode: "CI", flag: "🇨🇮", dialCode: "225", name: "Côte d'Ivoire", phonePlaceholder: "0712345678",
     operators: [
       { label: "MTN", mode: "mtn_ci", color: "#FFD700" },
       { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
-    id: "NER", code: "ne", flag: "🇳🇪", dialCode: "227", name: "Niger", phonePlaceholder: "96123456",
+    id: "NER", code: "ne", isoCode: "NE", flag: "🇳🇪", dialCode: "227", name: "Niger", phonePlaceholder: "96123456",
     operators: [
       { label: "Airtel", mode: "airtel_ne", color: "#E53935" },
       { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
-    id: "SEN", code: "sn", flag: "🇸🇳", dialCode: "221", name: "Sénégal", phonePlaceholder: "771234567",
+    id: "SEN", code: "sn", isoCode: "SN", flag: "🇸🇳", dialCode: "221", name: "Sénégal", phonePlaceholder: "771234567",
     operators: [
       { label: "Free", mode: "free_sn", color: "#E53935" },
       { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
-    id: "GIN", code: "gn", flag: "🇬🇳", dialCode: "224", name: "Guinée", phonePlaceholder: "621234567",
+    id: "GIN", code: "gn", isoCode: "GN", flag: "🇬🇳", dialCode: "224", name: "Guinée", phonePlaceholder: "621234567",
     operators: [
       { label: "MTN", mode: "mtn_open_gn", color: "#FFD700" },
       { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
@@ -115,14 +116,14 @@ const formations: Formation[] = [
   {
     id: "facebook-scores",
     title: "Booster sa visibilité avec les scores en direct",
-    description: "Apprends à capter l’attention, générer des vues et créer une audience fidèle avec des contenus qui vivent en temps réel.",
+    description: "Apprends à capter l'attention, générer des vues et créer une audience fidèle avec des contenus qui vivent en temps réel.",
     lessons: 8,
     duration: "1 h 40",
     tone: "coral",
   },
   {
     id: "onewin-promo",
-    title: "Gagner de l’argent avec un code promo",
+    title: "Gagner de l'argent avec un code promo",
     description: "Une méthode pratique pour créer, configurer et monétiser ton propre code promo.",
     lessons: 6,
     duration: "1 h 15",
@@ -306,7 +307,7 @@ function App() {
     const link = `${window.location.origin}${window.location.pathname}?ref=${referralCode}`;
     try {
       await navigator.clipboard.writeText(link);
-      showToast("Lien de parrainage copié !", "success");
+      showToast("Lien de parrainage copié !");
     } catch {
       showToast(link, "info");
     }
@@ -427,7 +428,7 @@ function App() {
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("formations"); }}><BookOpen size={17} /><span>Formations</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("acces-prive"); }}><Ticket size={17} /><span>Ticket d'entrée</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("portefeuille"); }}><Coins size={17} /><span>Portefeuille</span><ChevronRight size={15} /></button>
-                <button type="button" onClick={() => { setMenuOpen(false); showToast("La communauté est prête à t’accueillir.", "info"); }}><MessageCircle size={17} /><span>Communauté</span><ChevronRight size={15} /></button>
+                <button type="button" onClick={() => { setMenuOpen(false); showToast("La communauté est prête à t'accueillir.", "info"); }}><MessageCircle size={17} /><span>Communauté</span><ChevronRight size={15} /></button>
                 <button type="button" className="menu-logout" data-testid="button-logout" onClick={() => { setMenuOpen(false); handleLogout(); }}><LogOut size={17} /><span>Se déconnecter</span><ChevronRight size={15} /></button>
               </div>
             </aside>
@@ -438,7 +439,6 @@ function App() {
     </main>
   );
 }
-
 
 function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: { firstName: string; unlocked: boolean; onGoToFormations: () => void; onGoToAccesPrive: () => void }) {
   return <div className="view-stack">
@@ -525,7 +525,7 @@ function WalletView({
 }) {
   return <div className="view-stack">
     <div className="page-heading">
-      <div><p className="eyebrow">TON PORTEFEUILLE</p><h1>Pièces & parrainage</h1></div>
+      <div><p className="eyebrow">TON PORTEFEUILLE</p><h1>Pièces &amp; parrainage</h1></div>
       <span className="reward-icon"><Trophy size={18} /></span>
     </div>
     <section className="reward-card">
@@ -541,7 +541,7 @@ function WalletView({
       <Gift size={26} />
       <p>Parraine tes amis</p>
       <strong>+{REFERRAL_REWARD_COINS} coins</strong>
-      <span>Par filleul·e qui rejoint l’espace de formation avec ton lien.</span>
+      <span>Par filleul·e qui rejoint l'espace de formation avec ton lien.</span>
       {referralCode ? (
         <button type="button" data-testid="button-copy-referral" onClick={onCopyReferral}>
           <Copy size={15} /> Copier mon lien ({referralCode})
@@ -613,6 +613,10 @@ function PrivateAccessView({
   const [enteredCode, setEnteredCode] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // On mémorise le pays ET l'indicatif au moment de l'envoi, pour les afficher dans le message d'attente
+  const [waitingDialCode, setWaitingDialCode] = useState("");
+  const [waitingPhone, setWaitingPhone] = useState("");
+
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
 
   useEffect(() => {
@@ -630,7 +634,7 @@ function PrivateAccessView({
           onToast("Paiement refusé ou annulé. Réessaie.", "warning");
         }
       } catch {
-        // erreur de sondage isolee : on reessaiera au prochain tick
+        // erreur de sondage isolée : on réessaiera au prochain tick
       }
     }, 3000);
 
@@ -654,7 +658,12 @@ function PrivateAccessView({
     }
     setBusy(true);
     try {
-      const result = await payMobile(phoneNumber.trim(), country.code, operatorMode);
+      // Mémoriser indicatif + numéro pour l'écran d'attente
+      setWaitingDialCode(country.dialCode);
+      setWaitingPhone(phoneNumber.trim());
+
+      // Envoyer le code ISO en MAJUSCULES à FedaPay (ex: "BJ", "TG", "CI"...)
+      const result = await payMobile(phoneNumber.trim(), country.isoCode, operatorMode);
       setTransactionId(result.transactionId);
       setStep("waiting");
       onToast(result.message ?? "Demande envoyée sur ton téléphone.", "success");
@@ -732,7 +741,7 @@ function PrivateAccessView({
               }}
             >
               <span style={{ fontSize: 18 }}>{c.flag}</span>
-              <span style={{ fontSize: 9, fontWeight: 600 }}>{c.code.toUpperCase()}</span>
+              <span style={{ fontSize: 9, fontWeight: 600 }}>+{c.dialCode}</span>
             </button>
           ))}
         </div>
@@ -789,7 +798,7 @@ function PrivateAccessView({
         <p className="eyebrow">PAIEMENT EN ATTENTE</p>
         <h2>Confirme sur ton téléphone</h2>
         <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
-          Une notification a été envoyée sur ton numéro +{country.dialCode} {phoneNumber}.
+          Une notification a été envoyée sur ton numéro +{waitingDialCode} {waitingPhone}.
           Valide le paiement via ton opérateur mobile money. Cette page se met à jour automatiquement.
         </p>
       </section>
