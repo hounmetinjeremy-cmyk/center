@@ -430,7 +430,8 @@ function FormationsView({ formations: list, selected, onToggle, onValidate, onBa
   </div>;
 }
 
-// Portefeuille : retrait REEL via FedaPay Payout (pays -> operateur -> telephone).
+// Portefeuille : "wallet" = solde + parrainage ; "withdraw" = formulaire de
+// retrait plein ecran (remplace la vue, ne s'empile pas -> pas de defilement).
 function WalletView({
   coins,
   referralCode,
@@ -446,7 +447,7 @@ function WalletView({
   onToast: (message: string, kind?: ToastKind) => void;
   onCoinsUpdated: () => void;
 }) {
-  const [showWithdrawForm, setShowWithdrawForm] = useState(false);
+  const [page, setPage] = useState<"wallet" | "withdraw">("wallet");
   const [countryId, setCountryId] = useState(COUNTRIES[0].id);
   const [operatorMode, setOperatorMode] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -461,39 +462,21 @@ function WalletView({
       onToast(`Retrait possible à partir de ${WITHDRAWAL_THRESHOLD} coins.`, "warning");
       return;
     }
-    setShowWithdrawForm(true);
+    setPage("withdraw");
   };
 
   const handleWithdraw = async () => {
     if (!userId) return;
     const amountNum = parseInt(amount, 10);
-    if (!operatorMode) {
-      onToast("Choisis ton opérateur mobile money.", "warning");
-      return;
-    }
-    if (phoneNumber.trim().length < 6) {
-      onToast("Entre un numéro de téléphone valide.", "warning");
-      return;
-    }
-    if (!amountNum || amountNum < WITHDRAWAL_THRESHOLD) {
-      onToast(`Le montant minimum est de ${WITHDRAWAL_THRESHOLD} coins.`, "warning");
-      return;
-    }
-    if (amountNum > coins) {
-      onToast("Solde insuffisant.", "warning");
-      return;
-    }
+    if (!operatorMode) { onToast("Choisis ton opérateur mobile money.", "warning"); return; }
+    if (phoneNumber.trim().length < 6) { onToast("Entre un numéro de téléphone valide.", "warning"); return; }
+    if (!amountNum || amountNum < WITHDRAWAL_THRESHOLD) { onToast(`Le montant minimum est de ${WITHDRAWAL_THRESHOLD} coins.`, "warning"); return; }
+    if (amountNum > coins) { onToast("Solde insuffisant.", "warning"); return; }
     setBusy(true);
     try {
-      const result = await requestWithdrawal({
-        userId,
-        amountCoins: amountNum,
-        phoneNumber: phoneNumber.trim(),
-        country: country.isoCode,
-        operator: operatorMode,
-      });
+      const result = await requestWithdrawal({ userId, amountCoins: amountNum, phoneNumber: phoneNumber.trim(), country: country.isoCode, operator: operatorMode });
       onToast(`Retrait envoyé ! Statut : ${result.status}`, "success");
-      setShowWithdrawForm(false);
+      setPage("wallet");
       setOperatorMode("");
       setPhoneNumber("");
       onCoinsUpdated();
@@ -504,29 +487,15 @@ function WalletView({
     }
   };
 
-  return <div className="view-stack">
-    <div className="page-heading">
-      <div><p className="eyebrow">TON PORTEFEUILLE</p><h1>Pièces & parrainage</h1></div>
-      <span className="reward-icon"><Trophy size={18} /></span>
-    </div>
-    <section className="reward-card">
-      <Coins size={26} />
-      <p>Ton solde de pièces</p>
-      <strong>{coins}</strong>
-      <span>Gagne des coins en parrainant tes amis. Retrait possible dès {WITHDRAWAL_THRESHOLD} coins.</span>
-      {!showWithdrawForm && (
-        <button type="button" onClick={handleOpenWithdraw}>
-          Demander un retrait <ArrowRight size={16} />
-        </button>
-      )}
-    </section>
+  if (page === "withdraw") {
+    return <div className="view-stack">
+      <div className="page-heading">
+        <button type="button" className="back-button" onClick={() => setPage("wallet")}><ArrowRight size={17} className="rotate-180" /></button>
+        <div><p className="eyebrow">RETRAIT MOBILE MONEY</p><h1>Où envoyer tes coins ?</h1></div>
+      </div>
 
-    {showWithdrawForm && (
       <section className="steps-card">
-        <p className="eyebrow">RETRAIT MOBILE MONEY</p>
-        <h2>Où envoyer tes coins ?</h2>
-
-        <p className="eyebrow" style={{ marginTop: 12 }}>PAYS</p>
+        <p className="eyebrow">PAYS</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 6 }}>
           {COUNTRIES.map((c) => (
             <button key={c.id} type="button" onClick={() => { setCountryId(c.id); setOperatorMode(""); }}
@@ -565,8 +534,21 @@ function WalletView({
           {busy ? "Envoi..." : "Confirmer le retrait"} <ArrowRight size={16} />
         </button>
       </section>
-    )}
+    </div>;
+  }
 
+  return <div className="view-stack">
+    <div className="page-heading">
+      <div><p className="eyebrow">TON PORTEFEUILLE</p><h1>Pièces & parrainage</h1></div>
+      <span className="reward-icon"><Trophy size={18} /></span>
+    </div>
+    <section className="reward-card">
+      <Coins size={26} />
+      <p>Ton solde de pièces</p>
+      <strong>{coins}</strong>
+      <span>Gagne des coins en parrainant tes amis. Retrait possible dès {WITHDRAWAL_THRESHOLD} coins.</span>
+      <button type="button" onClick={handleOpenWithdraw}>Demander un retrait <ArrowRight size={16} /></button>
+    </section>
     <section className="reward-card">
       <Gift size={26} />
       <p>Parraine tes amis</p>
