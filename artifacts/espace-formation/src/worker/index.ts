@@ -1,19 +1,19 @@
 /**
  * Worker "center" : sert le site statique (React) via env.ASSETS.fetch,
  * SAUF pour /api/fedapay/* qu'il intercepte pour :
- *  - relayer la cle secrete FedaPay (paiement) vers Supabase, sans jamais
- *    l'exposer au navigateur ;
- *  - recevoir et VERIFIER les webhooks FedaPay (confirmation instantanee
- *    de paiement), avec la cle webhook, elle aussi stockee uniquement ici.
+ *  - relayer la cle secrete FedaPay + le mode (sandbox/live, decide ici
+ *    cote serveur, jamais par le navigateur) vers Supabase ;
+ *  - recevoir et VERIFIER les webhooks FedaPay (confirmation instantanee).
  */
 
 export interface Env {
   ASSETS: Fetcher;
+  FEDAPAY_MODE: string; // "sandbox" | "live"
+  FEDAPAY_PUBLIC_KEY: string;
   FEDAPAY_SECRET_KEY: string;
   FEDAPAY_WEBHOOK_KEY: string;
 }
 
-const SUPABASE_FUNCTION_BASE = "https://uvkpqgihomwgszhrapda.supabase.co/functions/v1/access";
 const SUPABASE_CENTER_FUNCTION_BASE = "https://iykryokvyrbdznbdxxjo.supabase.co/functions/v1/access";
 
 async function hmacSha256Hex(key: string, message: string): Promise<string> {
@@ -31,10 +31,8 @@ async function hmacSha256Hex(key: string, message: string): Promise<string> {
 }
 
 // FedaPay signe ses webhooks via l'en-tete "FedaPay-Signature": "t=<timestamp>,s=<signature_hex>"
-// signature = HMAC-SHA256(cle_webhook, `${timestamp}.${corps_brut}`)
 async function verifyFedaPaySignature(rawBody: string, signatureHeader: string | null, webhookKey: string): Promise<boolean> {
   if (!signatureHeader || !webhookKey) return false;
-
   const parts = Object.fromEntries(
     signatureHeader.split(",").map((p) => {
       const [k, v] = p.split("=");
@@ -44,7 +42,6 @@ async function verifyFedaPaySignature(rawBody: string, signatureHeader: string |
   const timestamp = parts["t"];
   const signature = parts["s"];
   if (!timestamp || !signature) return false;
-
   const expected = await hmacSha256Hex(webhookKey, `${timestamp}.${rawBody}`);
   return expected === signature;
 }
@@ -52,8 +49,9 @@ async function verifyFedaPaySignature(rawBody: string, signatureHeader: string |
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const mode = env.FEDAPAY_MODE === "live" ? "live" : "sandbox";
 
-    // ─── Webhook FedaPay : confirmation instantanee, appele directement par FedaPay ───
+    // ─── Webhook FedaPay : appele directement par FedaPay, pas par le navigateur ───
     if (url.pathname === "/api/fedapay/webhook" && request.method === "POST") {
       const rawBody = await request.text();
       const signatureHeader = request.headers.get("fedapay-signature") ?? request.headers.get("FedaPay-Signature");
@@ -83,9 +81,6 @@ export default {
             : null;
 
       if (transactionId && status) {
-        // Ecrit directement dans Supabase (PostgREST) : cet appel est
-        // serveur-a-serveur (FedaPay -> Cloudflare -> Supabase), jamais
-        // expose au navigateur.
         await fetch(`https://iykryokvyrbdznbdxxjo.supabase.co/rest/v1/fedapay_transactions`, {
           method: "POST",
           headers: {
@@ -100,19 +95,34 @@ export default {
       return new Response(JSON.stringify({ received: true }), { status: 200 });
     }
 
-    // ─── Reste des appels de paiement : relais avec la cle secrete FedaPay ───
+    // ─── Reste des appels de paiement : relais avec cle secrete + mode (serveur) ───
     if (url.pathname.startsWith("/api/fedapay/")) {
       const targetPath = url.pathname.replace("/api/fedapay", "");
-      const targetUrl = `${SUPABASE_CENTER_FUNCTION_BASE}${targetPath}${url.search}`;
+      const targetUrl = new URL(`${SUPABASE_CENTER_FUNCTION_BASE}${targetPath}${url.search}`);
+      targetUrl.searchParams.set("mode", mode);
 
       const forwardedHeaders = new Headers(request.headers);
       forwardedHeaders.set("X-Fedapay-Secret", env.FEDAPAY_SECRET_KEY ?? "");
+      forwardedHeaders.set("X-Fedapay-Public", env.FEDAPAY_PUBLIC_KEY ?? "");
+      forwardedHeaders.set("X-Fedapay-Mode", mode);
       forwardedHeaders.delete("host");
 
-      const forwardedRequest = new Request(targetUrl, {
+      let bodyText: string | undefined;
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        bodyText = await request.text();
+        try {
+          const parsed = bodyText ? JSON.parse(bodyText) : {};
+          parsed.mode = mode; // le serveur decide, pas le navigateur
+          bodyText = JSON.stringify(parsed);
+        } catch {
+          // corps non-JSON : on le laisse tel quel
+        }
+      }
+
+      const forwardedRequest = new Request(targetUrl.toString(), {
         method: request.method,
         headers: forwardedHeaders,
-        body: request.method !== "GET" && request.method !== "HEAD" ? await request.text() : undefined,
+        body: bodyText,
       });
 
       const response = await fetch(forwardedRequest);
