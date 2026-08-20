@@ -24,7 +24,7 @@ import {
 import { AuthView } from "@/components/auth-view";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
-import { payForTicket, redeemTicketCode } from "@/lib/access-api";
+import { payMobile, checkPaymentStatus, redeemTicketCode } from "@/lib/access-api";
 import { getDeviceId } from "@/lib/device";
 
 type ToastKind = "success" | "warning" | "info";
@@ -40,8 +40,59 @@ interface Formation {
   tone: "coral" | "teal" | "violet";
 }
 
+interface Operator {
+  label: string;
+  mode: string;
+  color: string;
+}
+
+interface Country {
+  id: string;
+  code: string;
+  flag: string;
+  dialCode: string;
+  name: string;
+  phonePlaceholder: string;
+  operators: Operator[];
+}
+
 const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 100;
+
+// 6 pays no-redirect confirmes par FedaPay (paiement Mobile Money direct, sans page externe).
+const COUNTRIES: Country[] = [
+  {
+    id: "BEN", code: "bj", flag: "🇧🇯", dialCode: "229", name: "Bénin", phonePlaceholder: "01XXXXXXXX",
+    operators: [
+      { label: "MTN", mode: "mtn_open", color: "#FFD700" },
+      { label: "MOOV", mode: "moov", color: "#FF6B1A" },
+      { label: "CELTIIS", mode: "sbin", color: "#4A90D9" },
+    ],
+  },
+  {
+    id: "TGO", code: "tg", flag: "🇹🇬", dialCode: "228", name: "Togo", phonePlaceholder: "90123456",
+    operators: [
+      { label: "MOOV", mode: "moov_tg", color: "#FF6B1A" },
+      { label: "Togocom", mode: "togocel", color: "#0070C0" },
+    ],
+  },
+  {
+    id: "CIV", code: "ci", flag: "🇨🇮", dialCode: "225", name: "Côte d'Ivoire", phonePlaceholder: "0712345678",
+    operators: [{ label: "MTN", mode: "mtn_ci", color: "#FFD700" }],
+  },
+  {
+    id: "NER", code: "ne", flag: "🇳🇪", dialCode: "227", name: "Niger", phonePlaceholder: "96123456",
+    operators: [{ label: "Airtel", mode: "airtel_ne", color: "#E53935" }],
+  },
+  {
+    id: "SEN", code: "sn", flag: "🇸🇳", dialCode: "221", name: "Sénégal", phonePlaceholder: "771234567",
+    operators: [{ label: "Free", mode: "free_sn", color: "#E53935" }],
+  },
+  {
+    id: "GIN", code: "gn", flag: "🇬🇳", dialCode: "224", name: "Guinée", phonePlaceholder: "621234567",
+    operators: [{ label: "MTN", mode: "mtn_open_gn", color: "#FFD700" }],
+  },
+];
 
 const formations: Formation[] = [
   {
@@ -113,7 +164,6 @@ async function markAccessUnlocked(uid: string) {
   if (error) console.warn("unlock_access:", error.message);
 }
 
-// Verifie/lie l'appareil courant au compte. Statuts : not_unlocked, bound, ok, blocked.
 async function bindOrCheckDevice(uid: string, deviceId: string): Promise<string> {
   const { data, error } = await supabase.rpc("bind_or_check_device", {
     p_user_id: uid,
@@ -182,7 +232,6 @@ function App() {
         setReferralCode(wallet.referralCode);
         setUnlocked(wallet.unlocked);
 
-        // Verifie l'appareil des que l'acces est deja debloque (retour d'un utilisateur existant).
         if (wallet.unlocked) {
           const status = await bindOrCheckDevice(authUser.uid, getDeviceId());
           if (status === "blocked") setDeviceBlocked(true);
@@ -226,7 +275,6 @@ function App() {
     setActiveNav("acces-prive");
   };
 
-  // Deblocage du ticket -> lie immediatement cet appareil au compte.
   const handleUnlocked = async () => {
     setUnlocked(true);
     if (authUser) {
@@ -320,7 +368,7 @@ function App() {
             />
           )}
           {activeNav === "acces-prive" && (
-            <PrivateAccessView userName={user.displayName} unlocked={unlocked} onUnlocked={handleUnlocked} onToast={showToast} />
+            <PrivateAccessView unlocked={unlocked} onUnlocked={handleUnlocked} onToast={showToast} />
           )}
           {activeNav === "portefeuille" && (
             <WalletView
@@ -467,7 +515,7 @@ function WalletView({
       <Coins size={26} />
       <p>Ton solde de pièces</p>
       <strong data-testid="text-wallet-coin-balance">{coins}</strong>
-      <span>Gagne des coins en parrainant tes amis. Le seuil de retrait sera annoncé bientôt.</span>
+      <span>Gagne des coins en parrainant tes amis. Retrait possible dès 3000 coins.</span>
       <button type="button" onClick={() => onToast("Le retrait sera disponible prochainement.", "info")}>
         Demander un retrait <ArrowRight size={16} />
       </button>
@@ -488,8 +536,6 @@ function WalletView({
   </div>;
 }
 
-// Ecran affiche quand un deuxieme appareil essaie d'utiliser le meme compte
-// apres que le premier ait deja ete lie (suspicion de partage de compte).
 function DeviceBlockedView({ onRequestReset, onLogout }: { onRequestReset: () => Promise<void>; onLogout: () => void }) {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -532,29 +578,74 @@ function DeviceBlockedView({ onRequestReset, onLogout }: { onRequestReset: () =>
   );
 }
 
+// Etape 2 : vrai paiement FedaPay Mobile Money, formulaire dans la page
+// (pays -> operateur -> telephone), sans redirection externe. Sondage
+// automatique du statut (webhook FedaPay met a jour cote serveur en
+// quasi temps reel) jusqu'a confirmation, puis affichage du code ticket.
 function PrivateAccessView({
-  userName,
   unlocked,
   onUnlocked,
   onToast,
 }: {
-  userName: string;
   unlocked: boolean;
   onUnlocked: () => void;
   onToast: (message: string, kind?: ToastKind) => void;
 }) {
-  const [step, setStep] = useState<"pay" | "redeem" | "done">(unlocked ? "done" : "pay");
+  const [step, setStep] = useState<"form" | "waiting" | "redeem" | "done">(unlocked ? "done" : "form");
+  const [countryId, setCountryId] = useState(COUNTRIES[0].id);
+  const [operatorMode, setOperatorMode] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [transactionId, setTransactionId] = useState<number | null>(null);
   const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [enteredCode, setEnteredCode] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
+
+  // Sondage automatique pendant l'attente de confirmation du paiement.
+  useEffect(() => {
+    if (step !== "waiting" || !transactionId) return;
+
+    const interval = window.setInterval(async () => {
+      try {
+        const result = await checkPaymentStatus(transactionId);
+        if (result.status === "approved" && result.ticketCode) {
+          setTicketCode(result.ticketCode);
+          setStep("redeem");
+          onToast("Paiement confirmé ! Voici ton code ticket.", "success");
+        } else if (result.status === "declined" || result.status === "canceled") {
+          setStep("form");
+          onToast("Paiement refusé ou annulé. Réessaie.", "warning");
+        }
+      } catch {
+        // on ignore les erreurs de sondage isolees, on reessaiera au prochain tick
+      }
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [step, transactionId, onToast]);
+
+  const handleCountryChange = (id: string) => {
+    setCountryId(id);
+    setOperatorMode("");
+    setPhoneNumber("");
+  };
+
   const handlePay = async () => {
+    if (!operatorMode) {
+      onToast("Choisis ton opérateur mobile money.", "warning");
+      return;
+    }
+    if (phoneNumber.trim().length < 6) {
+      onToast("Entre un numéro de téléphone valide.", "warning");
+      return;
+    }
     setBusy(true);
     try {
-      const result = await payForTicket(userName);
-      setTicketCode(result.ticketCode);
-      setStep("redeem");
-      onToast("Paiement simulé. Voici ton code ticket !", "success");
+      const result = await payMobile(phoneNumber.trim(), country.code, operatorMode);
+      setTransactionId(result.transactionId);
+      setStep("waiting");
+      onToast(result.message ?? "Demande envoyée sur ton téléphone.", "success");
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Une erreur est survenue.", "warning");
     } finally {
@@ -612,22 +703,80 @@ function PrivateAccessView({
       <span className="reward-icon"><Ticket size={18} /></span>
     </div>
 
-    <section className="steps-card">
-      <p className="eyebrow">PAIEMENT</p>
-      <h2>Paye ton ticket unique</h2>
-      <div className="reward-step">
-        <span>01</span>
-        <i><ShieldCheck size={15} /></i>
-        <div><b>Ticket d'entrée</b><small>{step === "pay" ? "Débloque formations + groupe WhatsApp" : "Payé ✓"}</small></div>
-      </div>
-      {step === "pay" && (
-        <button type="button" className="primary-button" data-testid="button-pay-ticket" onClick={handlePay} disabled={busy}>
-          {busy ? "Paiement en cours..." : "Payer le ticket"} <ArrowRight size={16} />
-        </button>
-      )}
-    </section>
+    {step === "form" && (
+      <section className="steps-card">
+        <p className="eyebrow">1. CHOISIS TON PAYS</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 8 }}>
+          {COUNTRIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => handleCountryChange(c.id)}
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                padding: "8px 4px", borderRadius: 10,
+                border: countryId === c.id ? "2px solid hsl(var(--primary))" : "1px solid hsl(var(--border))",
+                background: "transparent", cursor: "pointer",
+              }}
+            >
+              <span style={{ fontSize: 18 }}>{c.flag}</span>
+              <span style={{ fontSize: 9, fontWeight: 600 }}>{c.code.toUpperCase()}</span>
+            </button>
+          ))}
+        </div>
 
-    {step !== "pay" && (
+        <p className="eyebrow" style={{ marginTop: 16 }}>2. CHOISIS TON OPÉRATEUR</p>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${country.operators.length}, 1fr)`, gap: 6, marginTop: 8 }}>
+          {country.operators.map((op) => (
+            <button
+              key={op.mode}
+              type="button"
+              onClick={() => setOperatorMode(op.mode)}
+              style={{
+                padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 12,
+                border: operatorMode === op.mode ? `2px solid ${op.color}` : "1px solid hsl(var(--border))",
+                background: operatorMode === op.mode ? op.color : "transparent",
+                color: operatorMode === op.mode ? "#fff" : "inherit",
+                cursor: "pointer",
+              }}
+            >
+              {op.label}
+            </button>
+          ))}
+        </div>
+
+        <p className="eyebrow" style={{ marginTop: 16 }}>3. NUMÉRO DE TÉLÉPHONE</p>
+        <div style={{ display: "flex", alignItems: "stretch", marginTop: 8, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
+          <span style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>
+            +{country.dialCode}
+          </span>
+          <input
+            type="tel"
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
+            placeholder={country.phonePlaceholder}
+            style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }}
+          />
+        </div>
+
+        <button type="button" className="primary-button" data-testid="button-pay-ticket" onClick={handlePay} disabled={busy} style={{ marginTop: 16 }}>
+          {busy ? "Envoi en cours..." : "Payer le ticket"} <ArrowRight size={16} />
+        </button>
+      </section>
+    )}
+
+    {step === "waiting" && (
+      <section className="steps-card" style={{ textAlign: "center" }}>
+        <p className="eyebrow">PAIEMENT EN ATTENTE</p>
+        <h2>Confirme sur ton téléphone</h2>
+        <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
+          Une notification a été envoyée sur ton numéro {country.dialCode ? `+${country.dialCode}` : ""} {phoneNumber}.
+          Valide le paiement via ton opérateur mobile money. Cette page se met à jour automatiquement.
+        </p>
+      </section>
+    )}
+
+    {step === "redeem" && (
       <section className="steps-card">
         <p className="eyebrow">VALIDATION</p>
         <h2>Entre ton code ticket</h2>
