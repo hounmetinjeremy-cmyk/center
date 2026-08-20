@@ -12,7 +12,14 @@ async function parseJsonOrThrow(response: Response) {
 }
 
 // --- Paiement Mobile Money ---
-export async function payMobile(phoneNumber: string, country: string, operator: string): Promise<{
+// customerEmail : email reel de l'utilisateur connecte (FedaPay Sandbox peut
+// rejeter les domaines manifestement factices).
+export async function payMobile(
+  phoneNumber: string,
+  country: string,
+  operator: string,
+  customerEmail: string,
+): Promise<{
   transactionId: number;
   status: string;
   message: string;
@@ -21,13 +28,13 @@ export async function payMobile(phoneNumber: string, country: string, operator: 
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phoneNumber, country, operator }),
+    body: JSON.stringify({ phoneNumber, country, operator, customerEmail }),
   });
   return parseJsonOrThrow(res);
 }
 
 // --- Paiement Carte : renvoie une URL de checkout FedaPay ---
-export async function payCard(): Promise<{
+export async function payCard(customerEmail: string): Promise<{
   transactionId: number;
   paymentUrl: string;
 }> {
@@ -35,7 +42,7 @@ export async function payCard(): Promise<{
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ customerEmail }),
   });
   return parseJsonOrThrow(res);
 }
