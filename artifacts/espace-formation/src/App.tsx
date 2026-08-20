@@ -8,6 +8,7 @@ import {
   Clock3,
   Coins,
   Copy,
+  FlaskConical,
   Gift,
   KeyRound,
   LogOut,
@@ -44,6 +45,7 @@ interface Operator {
   label: string;
   mode: string;
   color: string;
+  isTest?: boolean;
 }
 
 interface Country {
@@ -60,6 +62,7 @@ const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 100;
 
 // 6 pays no-redirect confirmes par FedaPay (paiement Mobile Money direct, sans page externe).
+// "Momo Test" (momo_test) present partout : permet de tester en Sandbox sans vrai numero.
 const COUNTRIES: Country[] = [
   {
     id: "BEN", code: "bj", flag: "🇧🇯", dialCode: "229", name: "Bénin", phonePlaceholder: "01XXXXXXXX",
@@ -67,6 +70,7 @@ const COUNTRIES: Country[] = [
       { label: "MTN", mode: "mtn_open", color: "#FFD700" },
       { label: "MOOV", mode: "moov", color: "#FF6B1A" },
       { label: "CELTIIS", mode: "sbin", color: "#4A90D9" },
+      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
@@ -74,23 +78,36 @@ const COUNTRIES: Country[] = [
     operators: [
       { label: "MOOV", mode: "moov_tg", color: "#FF6B1A" },
       { label: "Togocom", mode: "togocel", color: "#0070C0" },
+      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
     id: "CIV", code: "ci", flag: "🇨🇮", dialCode: "225", name: "Côte d'Ivoire", phonePlaceholder: "0712345678",
-    operators: [{ label: "MTN", mode: "mtn_ci", color: "#FFD700" }],
+    operators: [
+      { label: "MTN", mode: "mtn_ci", color: "#FFD700" },
+      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
+    ],
   },
   {
     id: "NER", code: "ne", flag: "🇳🇪", dialCode: "227", name: "Niger", phonePlaceholder: "96123456",
-    operators: [{ label: "Airtel", mode: "airtel_ne", color: "#E53935" }],
+    operators: [
+      { label: "Airtel", mode: "airtel_ne", color: "#E53935" },
+      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
+    ],
   },
   {
     id: "SEN", code: "sn", flag: "🇸🇳", dialCode: "221", name: "Sénégal", phonePlaceholder: "771234567",
-    operators: [{ label: "Free", mode: "free_sn", color: "#E53935" }],
+    operators: [
+      { label: "Free", mode: "free_sn", color: "#E53935" },
+      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
+    ],
   },
   {
     id: "GIN", code: "gn", flag: "🇬🇳", dialCode: "224", name: "Guinée", phonePlaceholder: "621234567",
-    operators: [{ label: "MTN", mode: "mtn_open_gn", color: "#FFD700" }],
+    operators: [
+      { label: "MTN", mode: "mtn_open_gn", color: "#FFD700" },
+      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
+    ],
   },
 ];
 
@@ -578,10 +595,6 @@ function DeviceBlockedView({ onRequestReset, onLogout }: { onRequestReset: () =>
   );
 }
 
-// Etape 2 : vrai paiement FedaPay Mobile Money, formulaire dans la page
-// (pays -> operateur -> telephone), sans redirection externe. Sondage
-// automatique du statut (webhook FedaPay met a jour cote serveur en
-// quasi temps reel) jusqu'a confirmation, puis affichage du code ticket.
 function PrivateAccessView({
   unlocked,
   onUnlocked,
@@ -602,7 +615,6 @@ function PrivateAccessView({
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
 
-  // Sondage automatique pendant l'attente de confirmation du paiement.
   useEffect(() => {
     if (step !== "waiting" || !transactionId) return;
 
@@ -618,7 +630,7 @@ function PrivateAccessView({
           onToast("Paiement refusé ou annulé. Réessaie.", "warning");
         }
       } catch {
-        // on ignore les erreurs de sondage isolees, on reessaiera au prochain tick
+        // erreur de sondage isolee : on reessaiera au prochain tick
       }
     }, 3000);
 
@@ -726,24 +738,31 @@ function PrivateAccessView({
         </div>
 
         <p className="eyebrow" style={{ marginTop: 16 }}>2. CHOISIS TON OPÉRATEUR</p>
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${country.operators.length}, 1fr)`, gap: 6, marginTop: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(country.operators.length, 3)}, 1fr)`, gap: 6, marginTop: 8 }}>
           {country.operators.map((op) => (
             <button
               key={op.mode}
               type="button"
               onClick={() => setOperatorMode(op.mode)}
               style={{
-                padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 12,
-                border: operatorMode === op.mode ? `2px solid ${op.color}` : "1px solid hsl(var(--border))",
-                background: operatorMode === op.mode ? op.color : "transparent",
-                color: operatorMode === op.mode ? "#fff" : "inherit",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 11,
+                border: operatorMode === op.mode ? `2px solid ${op.color}` : op.isTest ? "1px dashed #A5B4FC" : "1px solid hsl(var(--border))",
+                background: operatorMode === op.mode ? op.color : op.isTest ? "rgba(99,102,241,0.08)" : "transparent",
+                color: operatorMode === op.mode ? "#fff" : op.isTest ? "#6366F1" : "inherit",
                 cursor: "pointer",
               }}
             >
+              {op.isTest && <FlaskConical size={14} />}
               {op.label}
             </button>
           ))}
         </div>
+        {operatorMode === "momo_test" && (
+          <p style={{ marginTop: 6, fontSize: 10, opacity: 0.65 }}>
+            Mode test : le paiement sera automatiquement approuvé par FedaPay, aucun vrai numéro requis.
+          </p>
+        )}
 
         <p className="eyebrow" style={{ marginTop: 16 }}>3. NUMÉRO DE TÉLÉPHONE</p>
         <div style={{ display: "flex", alignItems: "stretch", marginTop: 8, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
@@ -770,7 +789,7 @@ function PrivateAccessView({
         <p className="eyebrow">PAIEMENT EN ATTENTE</p>
         <h2>Confirme sur ton téléphone</h2>
         <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
-          Une notification a été envoyée sur ton numéro {country.dialCode ? `+${country.dialCode}` : ""} {phoneNumber}.
+          Une notification a été envoyée sur ton numéro +{country.dialCode} {phoneNumber}.
           Valide le paiement via ton opérateur mobile money. Cette page se met à jour automatiquement.
         </p>
       </section>
