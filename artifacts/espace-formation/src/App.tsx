@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -25,7 +25,7 @@ import {
 import { AuthView } from "@/components/auth-view";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
-import { payMobile, checkPaymentStatus, redeemTicketCode } from "@/lib/access-api";
+import { payMobile, checkPaymentStatus, redeemTicketCode, requestWithdrawal } from "@/lib/access-api";
 import { getDeviceId } from "@/lib/device";
 
 type ToastKind = "success" | "warning" | "info";
@@ -50,8 +50,8 @@ interface Operator {
 
 interface Country {
   id: string;
-  code: string;       // code ISO 2 lettres minuscules (ex: "bj") — utilisé pour l'affichage du drapeau
-  isoCode: string;    // code ISO 2 lettres MAJUSCULES (ex: "BJ") — envoyé à FedaPay
+  code: string;
+  isoCode: string;
   flag: string;
   dialCode: string;
   name: string;
@@ -61,9 +61,8 @@ interface Country {
 
 const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 100;
+const WITHDRAWAL_THRESHOLD = 3000;
 
-// 6 pays no-redirect confirmés par FedaPay (paiement Mobile Money direct, sans page externe).
-// "Momo Test" (momo_test) présent partout : permet de tester en Sandbox sans vrai numéro.
 const COUNTRIES: Country[] = [
   {
     id: "BEN", code: "bj", isoCode: "BJ", flag: "🇧🇯", dialCode: "229", name: "Bénin", phonePlaceholder: "01XXXXXXXX",
@@ -152,10 +151,7 @@ async function syncWallet(
     p_display_name: displayName,
     p_avatar_url: avatarUrl,
   });
-  if (error) {
-    console.warn("sync_wallet:", error.message);
-    return null;
-  }
+  if (error) return null;
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;
   return {
@@ -170,33 +166,22 @@ async function claimPendingReferral(uid: string): Promise<boolean> {
   if (!pendingCode) return false;
   const { data, error } = await supabase.rpc("claim_referral", { p_user_id: uid, p_code: pendingCode });
   window.localStorage.removeItem(PENDING_REFERRAL_KEY);
-  if (error) {
-    console.warn("claim_referral:", error.message);
-    return false;
-  }
+  if (error) return false;
   return Boolean(data);
 }
 
 async function markAccessUnlocked(uid: string) {
-  const { error } = await supabase.rpc("unlock_access", { p_user_id: uid });
-  if (error) console.warn("unlock_access:", error.message);
+  await supabase.rpc("unlock_access", { p_user_id: uid });
 }
 
 async function bindOrCheckDevice(uid: string, deviceId: string): Promise<string> {
-  const { data, error } = await supabase.rpc("bind_or_check_device", {
-    p_user_id: uid,
-    p_device_id: deviceId,
-  });
-  if (error) {
-    console.warn("bind_or_check_device:", error.message);
-    return "error";
-  }
+  const { data, error } = await supabase.rpc("bind_or_check_device", { p_user_id: uid, p_device_id: deviceId });
+  if (error) return "error";
   return data as string;
 }
 
 async function requestDeviceReset(uid: string) {
   const { error } = await supabase.rpc("request_device_reset", { p_user_id: uid });
-  if (error) console.warn("request_device_reset:", error.message);
   return !error;
 }
 
@@ -230,26 +215,17 @@ function App() {
   }, [toast]);
 
   const firstName = user?.displayName?.split(" ")[0] || "apprenant·e";
-
   const showToast = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
 
   useEffect(() => {
     if (!authUser) return;
-
     setWalletLoading(true);
     (async () => {
-      const wallet = await syncWallet(
-        authUser.uid,
-        authUser.email ?? null,
-        authUser.displayName ?? null,
-        authUser.photoURL ?? null,
-      );
-
+      const wallet = await syncWallet(authUser.uid, authUser.email ?? null, authUser.displayName ?? null, authUser.photoURL ?? null);
       if (wallet) {
         setCoins(wallet.coins);
         setReferralCode(wallet.referralCode);
         setUnlocked(wallet.unlocked);
-
         if (wallet.unlocked) {
           const status = await bindOrCheckDevice(authUser.uid, getDeviceId());
           if (status === "blocked") setDeviceBlocked(true);
@@ -257,14 +233,12 @@ function App() {
       } else {
         showToast("Impossible de charger ton portefeuille pour le moment.", "warning");
       }
-
       const claimed = await claimPendingReferral(authUser.uid);
       if (claimed) {
         showToast("Code de parrainage validé, ton ami a reçu ses coins !", "success");
         const refreshed = await syncWallet(authUser.uid, null, null, null);
         if (refreshed) setCoins(refreshed.coins);
       }
-
       setWalletLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -280,9 +254,7 @@ function App() {
   };
 
   const toggleFormation = (id: string) => {
-    setSelectedFormations((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-    );
+    setSelectedFormations((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   };
 
   const validateSelection = () => {
@@ -307,10 +279,16 @@ function App() {
     const link = `${window.location.origin}${window.location.pathname}?ref=${referralCode}`;
     try {
       await navigator.clipboard.writeText(link);
-      showToast("Lien de parrainage copié !");
+      showToast("Lien de parrainage copié !", "success");
     } catch {
       showToast(link, "info");
     }
+  };
+
+  const refreshCoins = async () => {
+    if (!authUser) return;
+    const wallet = await syncWallet(authUser.uid, null, null, null);
+    if (wallet) setCoins(wallet.coins);
   };
 
   if (authLoading) {
@@ -322,7 +300,7 @@ function App() {
       <main className="app-shell">
         <div className="phone-frame login-frame">
           <AuthView onNotify={showToast} />
-          {toast && <div className={`toast toast-${toast.kind}`} role="status" data-testid="status-toast"><span>{toast.message}</span><button type="button" aria-label="Fermer le message" onClick={() => setToast(null)}><X size={15} /></button></div>}
+          {toast && <div className={`toast toast-${toast.kind}`} role="status"><span>{toast.message}</span><button type="button" aria-label="Fermer" onClick={() => setToast(null)}><X size={15} /></button></div>}
         </div>
       </main>
     );
@@ -336,39 +314,26 @@ function App() {
             onRequestReset={async () => {
               if (!authUser) return;
               const ok = await requestDeviceReset(authUser.uid);
-              showToast(
-                ok
-                  ? "Demande envoyée. Contacte le support pour finaliser la réinitialisation."
-                  : "Impossible d'envoyer la demande pour le moment.",
-                ok ? "success" : "warning",
-              );
+              showToast(ok ? "Demande envoyée. Contacte le support." : "Impossible d'envoyer la demande.", ok ? "success" : "warning");
             }}
             onLogout={handleLogout}
           />
-          {toast && <div className={`toast toast-${toast.kind}`} role="status" data-testid="status-toast"><span>{toast.message}</span><button type="button" aria-label="Fermer le message" onClick={() => setToast(null)}><X size={15} /></button></div>}
+          {toast && <div className={`toast toast-${toast.kind}`} role="status"><span>{toast.message}</span><button type="button" aria-label="Fermer" onClick={() => setToast(null)}><X size={15} /></button></div>}
         </div>
       </main>
     );
   }
 
-
   return (
     <main className="app-shell">
       <div className="phone-frame">
         <header className="topbar">
-          <button type="button" className="icon-button" data-testid="button-open-menu" aria-label="Ouvrir le menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><Menu size={20} /></button>
+          <button type="button" className="icon-button" aria-label="Ouvrir le menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><Menu size={20} /></button>
           <div className="brand-lockup"><span className="brand-mark"><Sparkles size={14} /></span><span>Espace <b>formation</b></span></div>
           <div className="topbar-right">
-          <button
-            type="button"
-            className="coin-chip"
-            data-testid="text-coin-balance"
-            title="Voir mon portefeuille"
-            onClick={() => setActiveNav("portefeuille")}
-            style={{ border: 0, cursor: "pointer" }}
-          >
-            <Coins size={13} /><b>{walletLoading ? "…" : coins}</b>
-          </button>
+            <button type="button" className="coin-chip" title="Voir mon portefeuille" onClick={() => setActiveNav("portefeuille")} style={{ border: 0, cursor: "pointer" }}>
+              <Coins size={13} /><b>{walletLoading ? "…" : coins}</b>
+            </button>
           </div>
         </header>
 
@@ -377,24 +342,13 @@ function App() {
             <HomeView firstName={firstName} unlocked={unlocked} onGoToFormations={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
           )}
           {activeNav === "formations" && (
-            <FormationsView
-              formations={formations}
-              selected={selectedFormations}
-              onToggle={toggleFormation}
-              onValidate={validateSelection}
-              onBack={() => setActiveNav("accueil")}
-            />
+            <FormationsView formations={formations} selected={selectedFormations} onToggle={toggleFormation} onValidate={validateSelection} onBack={() => setActiveNav("accueil")} />
           )}
           {activeNav === "acces-prive" && (
             <PrivateAccessView unlocked={unlocked} onUnlocked={handleUnlocked} onToast={showToast} />
           )}
           {activeNav === "portefeuille" && (
-            <WalletView
-              coins={coins}
-              referralCode={referralCode}
-              onCopyReferral={copyReferralLink}
-              onToast={showToast}
-            />
+            <WalletView coins={coins} referralCode={referralCode} userId={authUser?.uid ?? null} onCopyReferral={copyReferralLink} onToast={showToast} onCoinsUpdated={refreshCoins} />
           )}
         </div>
 
@@ -405,20 +359,17 @@ function App() {
             ["acces-prive", "Ticket", Ticket],
             ["portefeuille", "Portefeuille", Coins],
           ] as const).map(([id, label, Icon]) => (
-            <button type="button" key={id} data-testid={`nav-${id}`} className={activeNav === id ? "active" : ""} onClick={() => setActiveNav(id)}><Icon size={18} /><span>{label}</span></button>
+            <button type="button" key={id} className={activeNav === id ? "active" : ""} onClick={() => setActiveNav(id)}><Icon size={18} /><span>{label}</span></button>
           ))}
         </nav>
 
         {menuOpen && (
           <div className="menu-layer" role="dialog" aria-label="Menu du compte">
-            <button type="button" className="menu-scrim" aria-label="Fermer le menu" onClick={() => setMenuOpen(false)} />
+            <button type="button" className="menu-scrim" aria-label="Fermer" onClick={() => setMenuOpen(false)} />
             <aside className="menu-panel">
               <div className="menu-panel-header">
-                <div>
-                  <p className="eyebrow">TON ESPACE</p>
-                  <h2>Menu principal</h2>
-                </div>
-                <button type="button" className="menu-close" aria-label="Fermer le menu" onClick={() => setMenuOpen(false)}><X size={17} /></button>
+                <div><p className="eyebrow">TON ESPACE</p><h2>Menu principal</h2></div>
+                <button type="button" className="menu-close" aria-label="Fermer" onClick={() => setMenuOpen(false)}><X size={17} /></button>
               </div>
               <div className="menu-profile">
                 <span className="menu-profile-avatar">{user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={18} />}</span>
@@ -429,12 +380,12 @@ function App() {
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("acces-prive"); }}><Ticket size={17} /><span>Ticket d'entrée</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("portefeuille"); }}><Coins size={17} /><span>Portefeuille</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); showToast("La communauté est prête à t'accueillir.", "info"); }}><MessageCircle size={17} /><span>Communauté</span><ChevronRight size={15} /></button>
-                <button type="button" className="menu-logout" data-testid="button-logout" onClick={() => { setMenuOpen(false); handleLogout(); }}><LogOut size={17} /><span>Se déconnecter</span><ChevronRight size={15} /></button>
+                <button type="button" className="menu-logout" onClick={() => { setMenuOpen(false); handleLogout(); }}><LogOut size={17} /><span>Se déconnecter</span><ChevronRight size={15} /></button>
               </div>
             </aside>
           </div>
         )}
-        {toast && <div className={`toast toast-${toast.kind}`} role="status" data-testid="status-toast"><span>{toast.message}</span><button type="button" aria-label="Fermer le message" data-testid="button-close-toast" onClick={() => setToast(null)}><X size={15} /></button></div>}
+        {toast && <div className={`toast toast-${toast.kind}`} role="status"><span>{toast.message}</span><button type="button" aria-label="Fermer" onClick={() => setToast(null)}><X size={15} /></button></div>}
       </div>
     </main>
   );
@@ -443,12 +394,10 @@ function App() {
 function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: { firstName: string; unlocked: boolean; onGoToFormations: () => void; onGoToAccesPrive: () => void }) {
   return <div className="view-stack">
     <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p></section>
-
     <button type="button" className="progress-card animate-rise" onClick={onGoToFormations} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
       <div><p className="eyebrow">ÉTAPE 1</p><h2>Choisis tes formations</h2><p style={{ margin: "7px 0 0", color: "hsl(42 67% 98% / .62)", fontSize: 10 }}>Coche celles qui t'intéressent.</p></div>
       <ArrowRight size={20} color="hsl(var(--accent))" />
     </button>
-
     <button type="button" className="community-card animate-rise" onClick={onGoToAccesPrive} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer" }}>
       <span className="community-icon"><Ticket size={20} /></span>
       <div><p className="eyebrow">ÉTAPE 2 · GROUPE PRIVÉ</p><h3>{unlocked ? "Accès débloqué" : "Payer le ticket d'entrée"}</h3><p>{unlocked ? "Rejoins la communauté à tout moment." : "Un ticket unique : formations + groupe WhatsApp."}</p></div>
@@ -457,95 +406,174 @@ function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: {
   </div>;
 }
 
-function FormationsView({
-  formations: list,
-  selected,
-  onToggle,
-  onValidate,
-  onBack,
-}: {
-  formations: Formation[];
-  selected: string[];
-  onToggle: (id: string) => void;
-  onValidate: () => void;
-  onBack: () => void;
-}) {
+function FormationsView({ formations: list, selected, onToggle, onValidate, onBack }: { formations: Formation[]; selected: string[]; onToggle: (id: string) => void; onValidate: () => void; onBack: () => void }) {
   return <div className="view-stack formations-view">
     <div className="page-heading">
-      <button type="button" className="back-button" data-testid="button-back-home" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button>
+      <button type="button" className="back-button" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button>
       <div><p className="eyebrow">ÉTAPE 1 · SÉLECTION</p><h1>Choisis tes formations</h1></div>
     </div>
     <div className="formation-list">
       {list.map((formation) => {
         const checked = selected.includes(formation.id);
         return (
-          <label
-            key={formation.id}
-            data-testid={`card-formation-${formation.id}`}
-            className={`module-card module-${formation.tone} module-full`}
-            style={{ cursor: "pointer", outline: checked ? "2px solid hsl(var(--primary))" : "none", outlineOffset: 2 }}
-          >
+          <label key={formation.id} className={`module-card module-${formation.tone} module-full`} style={{ cursor: "pointer", outline: checked ? "2px solid hsl(var(--primary))" : "none", outlineOffset: 2 }}>
             <div className="module-topline">
-              <span className="module-number">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => onToggle(formation.id)}
-                  data-testid={`checkbox-formation-${formation.id}`}
-                  style={{ width: 18, height: 18, accentColor: "hsl(var(--primary))" }}
-                />
-              </span>
+              <span className="module-number"><input type="checkbox" checked={checked} onChange={() => onToggle(formation.id)} style={{ width: 18, height: 18, accentColor: "hsl(var(--primary))" }} /></span>
               {checked && <Check size={17} />}
             </div>
-            <div className="module-content">
-              <p>{formation.lessons} LEÇONS</p>
-              <h3>{formation.title}</h3>
-              <span><Clock3 size={12} /> {formation.duration}</span>
-            </div>
+            <div className="module-content"><p>{formation.lessons} LEÇONS</p><h3>{formation.title}</h3><span><Clock3 size={12} /> {formation.duration}</span></div>
           </label>
         );
       })}
     </div>
-    <button type="button" className="primary-button" data-testid="button-validate-selection" onClick={onValidate}>
-      Valider ma sélection ({selected.length}) <ArrowRight size={16} />
-    </button>
+    <button type="button" className="primary-button" onClick={onValidate}>Valider ma sélection ({selected.length}) <ArrowRight size={16} /></button>
   </div>;
 }
 
+// Portefeuille : retrait REEL via FedaPay Payout (pays -> operateur -> telephone).
 function WalletView({
   coins,
   referralCode,
+  userId,
   onCopyReferral,
   onToast,
+  onCoinsUpdated,
 }: {
   coins: number;
   referralCode: string | null;
+  userId: string | null;
   onCopyReferral: () => void;
   onToast: (message: string, kind?: ToastKind) => void;
+  onCoinsUpdated: () => void;
 }) {
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false);
+  const [countryId, setCountryId] = useState(COUNTRIES[0].id);
+  const [operatorMode, setOperatorMode] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [amount, setAmount] = useState(String(WITHDRAWAL_THRESHOLD));
+  const [busy, setBusy] = useState(false);
+
+  const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
+  const canWithdraw = coins >= WITHDRAWAL_THRESHOLD;
+
+  const handleOpenWithdraw = () => {
+    if (!canWithdraw) {
+      onToast(`Retrait possible à partir de ${WITHDRAWAL_THRESHOLD} coins.`, "warning");
+      return;
+    }
+    setShowWithdrawForm(true);
+  };
+
+  const handleWithdraw = async () => {
+    if (!userId) return;
+    const amountNum = parseInt(amount, 10);
+    if (!operatorMode) {
+      onToast("Choisis ton opérateur mobile money.", "warning");
+      return;
+    }
+    if (phoneNumber.trim().length < 6) {
+      onToast("Entre un numéro de téléphone valide.", "warning");
+      return;
+    }
+    if (!amountNum || amountNum < WITHDRAWAL_THRESHOLD) {
+      onToast(`Le montant minimum est de ${WITHDRAWAL_THRESHOLD} coins.`, "warning");
+      return;
+    }
+    if (amountNum > coins) {
+      onToast("Solde insuffisant.", "warning");
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await requestWithdrawal({
+        userId,
+        amountCoins: amountNum,
+        phoneNumber: phoneNumber.trim(),
+        country: country.isoCode,
+        operator: operatorMode,
+      });
+      onToast(`Retrait envoyé ! Statut : ${result.status}`, "success");
+      setShowWithdrawForm(false);
+      setOperatorMode("");
+      setPhoneNumber("");
+      onCoinsUpdated();
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Erreur lors du retrait.", "warning");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return <div className="view-stack">
     <div className="page-heading">
-      <div><p className="eyebrow">TON PORTEFEUILLE</p><h1>Pièces &amp; parrainage</h1></div>
+      <div><p className="eyebrow">TON PORTEFEUILLE</p><h1>Pièces & parrainage</h1></div>
       <span className="reward-icon"><Trophy size={18} /></span>
     </div>
     <section className="reward-card">
       <Coins size={26} />
       <p>Ton solde de pièces</p>
-      <strong data-testid="text-wallet-coin-balance">{coins}</strong>
-      <span>Gagne des coins en parrainant tes amis. Retrait possible dès 3000 coins.</span>
-      <button type="button" onClick={() => onToast("Le retrait sera disponible prochainement.", "info")}>
-        Demander un retrait <ArrowRight size={16} />
-      </button>
+      <strong>{coins}</strong>
+      <span>Gagne des coins en parrainant tes amis. Retrait possible dès {WITHDRAWAL_THRESHOLD} coins.</span>
+      {!showWithdrawForm && (
+        <button type="button" onClick={handleOpenWithdraw}>
+          Demander un retrait <ArrowRight size={16} />
+        </button>
+      )}
     </section>
-    <section className="reward-card" data-testid="section-referral">
+
+    {showWithdrawForm && (
+      <section className="steps-card">
+        <p className="eyebrow">RETRAIT MOBILE MONEY</p>
+        <h2>Où envoyer tes coins ?</h2>
+
+        <p className="eyebrow" style={{ marginTop: 12 }}>PAYS</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 6 }}>
+          {COUNTRIES.map((c) => (
+            <button key={c.id} type="button" onClick={() => { setCountryId(c.id); setOperatorMode(""); }}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 4px", borderRadius: 10, border: countryId === c.id ? "2px solid hsl(var(--primary))" : "1px solid hsl(var(--border))", background: "transparent", cursor: "pointer" }}>
+              <span style={{ fontSize: 18 }}>{c.flag}</span>
+              <span style={{ fontSize: 9, fontWeight: 600 }}>+{c.dialCode}</span>
+            </button>
+          ))}
+        </div>
+
+        <p className="eyebrow" style={{ marginTop: 12 }}>OPÉRATEUR</p>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(country.operators.length, 3)}, 1fr)`, gap: 6, marginTop: 6 }}>
+          {country.operators.map((op) => (
+            <button key={op.mode} type="button" onClick={() => setOperatorMode(op.mode)}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 11,
+                border: operatorMode === op.mode ? `2px solid ${op.color}` : op.isTest ? "1px dashed #A5B4FC" : "1px solid hsl(var(--border))",
+                background: operatorMode === op.mode ? op.color : op.isTest ? "rgba(99,102,241,0.08)" : "transparent",
+                color: operatorMode === op.mode ? "#fff" : op.isTest ? "#6366F1" : "inherit", cursor: "pointer" }}>
+              {op.isTest && <FlaskConical size={14} />}
+              {op.label}
+            </button>
+          ))}
+        </div>
+
+        <p className="eyebrow" style={{ marginTop: 12 }}>NUMÉRO DE TÉLÉPHONE</p>
+        <div style={{ display: "flex", marginTop: 6, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
+          <span style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>+{country.dialCode}</span>
+          <input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))} placeholder={country.phonePlaceholder} style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }} />
+        </div>
+
+        <p className="eyebrow" style={{ marginTop: 12 }}>MONTANT (COINS)</p>
+        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={WITHDRAWAL_THRESHOLD} max={coins}
+          style={{ width: "100%", marginTop: 6, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontSize: 15 }} />
+
+        <button type="button" className="primary-button" onClick={handleWithdraw} disabled={busy} style={{ marginTop: 14 }}>
+          {busy ? "Envoi..." : "Confirmer le retrait"} <ArrowRight size={16} />
+        </button>
+      </section>
+    )}
+
+    <section className="reward-card">
       <Gift size={26} />
       <p>Parraine tes amis</p>
       <strong>+{REFERRAL_REWARD_COINS} coins</strong>
       <span>Par filleul·e qui rejoint l'espace de formation avec ton lien.</span>
       {referralCode ? (
-        <button type="button" data-testid="button-copy-referral" onClick={onCopyReferral}>
-          <Copy size={15} /> Copier mon lien ({referralCode})
-        </button>
+        <button type="button" onClick={onCopyReferral}><Copy size={15} /> Copier mon lien ({referralCode})</button>
       ) : (
         <span style={{ opacity: 0.6, fontSize: 10 }}>Chargement de ton code...</span>
       )}
@@ -556,54 +584,24 @@ function WalletView({
 function DeviceBlockedView({ onRequestReset, onLogout }: { onRequestReset: () => Promise<void>; onLogout: () => void }) {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  const handleRequest = async () => {
-    setBusy(true);
-    await onRequestReset();
-    setSent(true);
-    setBusy(false);
-  };
-
+  const handleRequest = async () => { setBusy(true); await onRequestReset(); setSent(true); setBusy(false); };
   return (
     <div className="login-view">
-      <span className="login-mark brand-mark" style={{ background: "hsl(var(--primary) / .15)", color: "hsl(var(--primary))" }}>
-        <AlertTriangle size={18} />
-      </span>
+      <span className="login-mark brand-mark" style={{ background: "hsl(var(--primary) / .15)", color: "hsl(var(--primary))" }}><AlertTriangle size={18} /></span>
       <p className="eyebrow">ACCÈS RESTREINT</p>
       <h1>Ce compte est déjà utilisé sur un autre appareil.</h1>
-      <p className="login-lead">
-        Pour éviter le partage de compte, l'accès aux formations et au groupe privé est limité à un seul appareil.
-        Si tu as changé de téléphone légitimement, demande une réinitialisation ci-dessous.
-      </p>
+      <p className="login-lead">Pour éviter le partage de compte, l'accès est limité à un seul appareil. Si tu as changé de téléphone légitimement, demande une réinitialisation ci-dessous.</p>
       {sent ? (
-        <p className="login-note" style={{ marginTop: 16 }}>
-          <ShieldCheck size={13} /> Demande envoyée. Contacte le support pour finaliser.
-        </p>
+        <p className="login-note" style={{ marginTop: 16 }}><ShieldCheck size={13} /> Demande envoyée. Contacte le support.</p>
       ) : (
-        <button type="button" className="auth-primary" style={{ marginTop: 16 }} onClick={handleRequest} disabled={busy}>
-          {busy ? "Envoi..." : "Demander une réinitialisation"}
-        </button>
+        <button type="button" className="auth-primary" style={{ marginTop: 16 }} onClick={handleRequest} disabled={busy}>{busy ? "Envoi..." : "Demander une réinitialisation"}</button>
       )}
-      <button
-        type="button"
-        onClick={onLogout}
-        style={{ marginTop: 12, border: 0, background: "transparent", color: "hsl(var(--muted-foreground))", fontSize: 12, cursor: "pointer" }}
-      >
-        Se déconnecter
-      </button>
+      <button type="button" onClick={onLogout} style={{ marginTop: 12, border: 0, background: "transparent", color: "hsl(var(--muted-foreground))", fontSize: 12, cursor: "pointer" }}>Se déconnecter</button>
     </div>
   );
 }
 
-function PrivateAccessView({
-  unlocked,
-  onUnlocked,
-  onToast,
-}: {
-  unlocked: boolean;
-  onUnlocked: () => void;
-  onToast: (message: string, kind?: ToastKind) => void;
-}) {
+function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolean; onUnlocked: () => void; onToast: (message: string, kind?: ToastKind) => void }) {
   const [step, setStep] = useState<"form" | "waiting" | "redeem" | "done">(unlocked ? "done" : "form");
   const [countryId, setCountryId] = useState(COUNTRIES[0].id);
   const [operatorMode, setOperatorMode] = useState("");
@@ -612,8 +610,6 @@ function PrivateAccessView({
   const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [enteredCode, setEnteredCode] = useState("");
   const [busy, setBusy] = useState(false);
-
-  // On mémorise le pays ET l'indicatif au moment de l'envoi, pour les afficher dans le message d'attente
   const [waitingDialCode, setWaitingDialCode] = useState("");
   const [waitingPhone, setWaitingPhone] = useState("");
 
@@ -621,7 +617,6 @@ function PrivateAccessView({
 
   useEffect(() => {
     if (step !== "waiting" || !transactionId) return;
-
     const interval = window.setInterval(async () => {
       try {
         const result = await checkPaymentStatus(transactionId);
@@ -633,36 +628,20 @@ function PrivateAccessView({
           setStep("form");
           onToast("Paiement refusé ou annulé. Réessaie.", "warning");
         }
-      } catch {
-        // erreur de sondage isolée : on réessaiera au prochain tick
-      }
+      } catch { /* on reessaiera au prochain tick */ }
     }, 3000);
-
     return () => window.clearInterval(interval);
   }, [step, transactionId, onToast]);
 
-  const handleCountryChange = (id: string) => {
-    setCountryId(id);
-    setOperatorMode("");
-    setPhoneNumber("");
-  };
+  const handleCountryChange = (id: string) => { setCountryId(id); setOperatorMode(""); setPhoneNumber(""); };
 
   const handlePay = async () => {
-    if (!operatorMode) {
-      onToast("Choisis ton opérateur mobile money.", "warning");
-      return;
-    }
-    if (phoneNumber.trim().length < 6) {
-      onToast("Entre un numéro de téléphone valide.", "warning");
-      return;
-    }
+    if (!operatorMode) { onToast("Choisis ton opérateur mobile money.", "warning"); return; }
+    if (phoneNumber.trim().length < 6) { onToast("Entre un numéro de téléphone valide.", "warning"); return; }
     setBusy(true);
     try {
-      // Mémoriser indicatif + numéro pour l'écran d'attente
       setWaitingDialCode(country.dialCode);
       setWaitingPhone(phoneNumber.trim());
-
-      // Envoyer le code ISO en MAJUSCULES à FedaPay (ex: "BJ", "TG", "CI"...)
       const result = await payMobile(phoneNumber.trim(), country.isoCode, operatorMode);
       setTransactionId(result.transactionId);
       setStep("waiting");
@@ -676,19 +655,12 @@ function PrivateAccessView({
 
   const handleCopyCode = async () => {
     if (!ticketCode) return;
-    try {
-      await navigator.clipboard.writeText(ticketCode);
-      onToast("Code copié !", "success");
-    } catch {
-      onToast(`Ton code : ${ticketCode}`, "info");
-    }
+    try { await navigator.clipboard.writeText(ticketCode); onToast("Code copié !", "success"); }
+    catch { onToast(`Ton code : ${ticketCode}`, "info"); }
   };
 
   const handleRedeem = async () => {
-    if (enteredCode.trim().length < 4) {
-      onToast("Entre le code complet reçu après paiement.", "warning");
-      return;
-    }
+    if (enteredCode.trim().length < 4) { onToast("Entre le code complet reçu après paiement.", "warning"); return; }
     setBusy(true);
     try {
       const { inviteUrl } = await redeemTicketCode(enteredCode);
@@ -705,41 +677,21 @@ function PrivateAccessView({
 
   if (step === "done") {
     return <div className="view-stack">
-      <div className="page-heading">
-        <div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div>
-        <span className="reward-icon"><Ticket size={18} /></span>
-      </div>
-      <section className="reward-card">
-        <ShieldCheck size={26} />
-        <p>Accès débloqué</p>
-        <strong>✓</strong>
-        <span>Tu as accès à toutes les formations et au groupe WhatsApp privé.</span>
-      </section>
+      <div className="page-heading"><div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div><span className="reward-icon"><Ticket size={18} /></span></div>
+      <section className="reward-card"><ShieldCheck size={26} /><p>Accès débloqué</p><strong>✓</strong><span>Tu as accès à toutes les formations et au groupe WhatsApp privé.</span></section>
     </div>;
   }
 
   return <div className="view-stack">
-    <div className="page-heading">
-      <div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div>
-      <span className="reward-icon"><Ticket size={18} /></span>
-    </div>
+    <div className="page-heading"><div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div><span className="reward-icon"><Ticket size={18} /></span></div>
 
     {step === "form" && (
       <section className="steps-card">
         <p className="eyebrow">1. CHOISIS TON PAYS</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 8 }}>
           {COUNTRIES.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => handleCountryChange(c.id)}
-              style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-                padding: "8px 4px", borderRadius: 10,
-                border: countryId === c.id ? "2px solid hsl(var(--primary))" : "1px solid hsl(var(--border))",
-                background: "transparent", cursor: "pointer",
-              }}
-            >
+            <button key={c.id} type="button" onClick={() => handleCountryChange(c.id)}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 4px", borderRadius: 10, border: countryId === c.id ? "2px solid hsl(var(--primary))" : "1px solid hsl(var(--border))", background: "transparent", cursor: "pointer" }}>
               <span style={{ fontSize: 18 }}>{c.flag}</span>
               <span style={{ fontSize: 9, fontWeight: 600 }}>+{c.dialCode}</span>
             </button>
@@ -749,45 +701,25 @@ function PrivateAccessView({
         <p className="eyebrow" style={{ marginTop: 16 }}>2. CHOISIS TON OPÉRATEUR</p>
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(country.operators.length, 3)}, 1fr)`, gap: 6, marginTop: 8 }}>
           {country.operators.map((op) => (
-            <button
-              key={op.mode}
-              type="button"
-              onClick={() => setOperatorMode(op.mode)}
-              style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-                padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 11,
+            <button key={op.mode} type="button" onClick={() => setOperatorMode(op.mode)}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 11,
                 border: operatorMode === op.mode ? `2px solid ${op.color}` : op.isTest ? "1px dashed #A5B4FC" : "1px solid hsl(var(--border))",
                 background: operatorMode === op.mode ? op.color : op.isTest ? "rgba(99,102,241,0.08)" : "transparent",
-                color: operatorMode === op.mode ? "#fff" : op.isTest ? "#6366F1" : "inherit",
-                cursor: "pointer",
-              }}
-            >
+                color: operatorMode === op.mode ? "#fff" : op.isTest ? "#6366F1" : "inherit", cursor: "pointer" }}>
               {op.isTest && <FlaskConical size={14} />}
               {op.label}
             </button>
           ))}
         </div>
-        {operatorMode === "momo_test" && (
-          <p style={{ marginTop: 6, fontSize: 10, opacity: 0.65 }}>
-            Mode test : le paiement sera automatiquement approuvé par FedaPay, aucun vrai numéro requis.
-          </p>
-        )}
+        {operatorMode === "momo_test" && <p style={{ marginTop: 6, fontSize: 10, opacity: 0.65 }}>Mode test : le paiement sera automatiquement approuvé par FedaPay, aucun vrai numéro requis.</p>}
 
         <p className="eyebrow" style={{ marginTop: 16 }}>3. NUMÉRO DE TÉLÉPHONE</p>
-        <div style={{ display: "flex", alignItems: "stretch", marginTop: 8, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
-          <span style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>
-            +{country.dialCode}
-          </span>
-          <input
-            type="tel"
-            value={phoneNumber}
-            onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
-            placeholder={country.phonePlaceholder}
-            style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }}
-          />
+        <div style={{ display: "flex", marginTop: 8, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
+          <span style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>+{country.dialCode}</span>
+          <input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))} placeholder={country.phonePlaceholder} style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }} />
         </div>
 
-        <button type="button" className="primary-button" data-testid="button-pay-ticket" onClick={handlePay} disabled={busy} style={{ marginTop: 16 }}>
+        <button type="button" className="primary-button" onClick={handlePay} disabled={busy} style={{ marginTop: 16 }}>
           {busy ? "Envoi en cours..." : "Payer le ticket"} <ArrowRight size={16} />
         </button>
       </section>
@@ -798,8 +730,7 @@ function PrivateAccessView({
         <p className="eyebrow">PAIEMENT EN ATTENTE</p>
         <h2>Confirme sur ton téléphone</h2>
         <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
-          Une notification a été envoyée sur ton numéro +{waitingDialCode} {waitingPhone}.
-          Valide le paiement via ton opérateur mobile money. Cette page se met à jour automatiquement.
+          Une notification a été envoyée sur ton numéro +{waitingDialCode} {waitingPhone}. Valide le paiement via ton opérateur mobile money. Cette page se met à jour automatiquement.
         </p>
       </section>
     )}
@@ -809,45 +740,14 @@ function PrivateAccessView({
         <p className="eyebrow">VALIDATION</p>
         <h2>Entre ton code ticket</h2>
         {ticketCode && (
-          <div
-            className="lesson-summary"
-            data-testid="text-ticket-code"
-            style={{ alignItems: "center", cursor: "pointer" }}
-            onClick={handleCopyCode}
-          >
+          <div className="lesson-summary" style={{ alignItems: "center", cursor: "pointer" }} onClick={handleCopyCode}>
             <span style={{ flex: 1 }}><KeyRound size={14} /> <b style={{ letterSpacing: "0.1em" }}>{ticketCode}</b></span>
-            <span style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
-              <Copy size={13} /> Copier
-            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 auto" }}><Copy size={13} /> Copier</span>
           </div>
         )}
-        <input
-          type="text"
-          value={enteredCode}
-          onChange={(event) => setEnteredCode(event.target.value.toUpperCase())}
-          placeholder="Ex: A3F7K9"
-          maxLength={6}
-          data-testid="input-ticket-code"
-          style={{
-            width: "100%",
-            marginTop: 10,
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid hsl(var(--border))",
-            fontFamily: "var(--font-mono)",
-            fontSize: 16,
-            letterSpacing: "0.15em",
-            textAlign: "center",
-          }}
-        />
-        <button
-          type="button"
-          className="primary-button"
-          data-testid="button-redeem-ticket"
-          onClick={handleRedeem}
-          disabled={busy}
-          style={{ marginTop: 12 }}
-        >
+        <input type="text" value={enteredCode} onChange={(event) => setEnteredCode(event.target.value.toUpperCase())} placeholder="Ex: A3F7K9" maxLength={6}
+          style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontFamily: "var(--font-mono)", fontSize: 16, letterSpacing: "0.15em", textAlign: "center" }} />
+        <button type="button" className="primary-button" onClick={handleRedeem} disabled={busy} style={{ marginTop: 12 }}>
           {busy ? "Vérification..." : "Entrer le code et débloquer l'accès"} <ArrowRight size={16} />
         </button>
       </section>
