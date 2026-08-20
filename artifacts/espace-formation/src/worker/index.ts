@@ -51,6 +51,26 @@ export default {
     const url = new URL(request.url);
     const mode = env.FEDAPAY_MODE === "live" ? "live" : "sandbox";
 
+    // ─── Diagnostic : dit uniquement SI chaque variable est presente/vide,
+    // JAMAIS sa valeur reelle. Utile pour verifier une config Cloudflare
+    // sans exposer de secret. A retirer une fois le probleme resolu.
+    if (url.pathname === "/api/fedapay/debug") {
+      const describe = (v: string | undefined) => (v ? `presente (${v.length} caracteres)` : "VIDE ou absente");
+      return new Response(
+        JSON.stringify(
+          {
+            FEDAPAY_MODE: env.FEDAPAY_MODE || "VIDE ou absente",
+            FEDAPAY_PUBLIC_KEY: describe(env.FEDAPAY_PUBLIC_KEY),
+            FEDAPAY_SECRET_KEY: describe(env.FEDAPAY_SECRET_KEY),
+            FEDAPAY_WEBHOOK_KEY: describe(env.FEDAPAY_WEBHOOK_KEY),
+          },
+          null,
+          2,
+        ),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     // ─── Webhook FedaPay : appele directement par FedaPay, pas par le navigateur ───
     if (url.pathname === "/api/fedapay/webhook" && request.method === "POST") {
       const rawBody = await request.text();
