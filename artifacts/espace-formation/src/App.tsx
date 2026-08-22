@@ -26,7 +26,6 @@ import { AuthView } from "@/components/auth-view";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
 import { payMobile, checkPaymentStatus, redeemTicketCode, requestWithdrawal } from "@/lib/access-api";
-import { getDeviceId } from "@/lib/device";
 
 type ToastKind = "success" | "warning" | "info";
 type AppUser = { displayName: string; email: string; photoURL?: string | null };
@@ -174,17 +173,6 @@ async function markAccessUnlocked(uid: string) {
   await supabase.rpc("unlock_access", { p_user_id: uid });
 }
 
-async function bindOrCheckDevice(uid: string, deviceId: string): Promise<string> {
-  const { data, error } = await supabase.rpc("bind_or_check_device", { p_user_id: uid, p_device_id: deviceId });
-  if (error) return "error";
-  return data as string;
-}
-
-async function requestDeviceReset(uid: string) {
-  const { error } = await supabase.rpc("request_device_reset", { p_user_id: uid });
-  return !error;
-}
-
 function App() {
   const { user: authUser, loading: authLoading, logout } = useAuth();
   const user: AppUser | null = authUser
@@ -202,7 +190,6 @@ function App() {
   const [walletLoading, setWalletLoading] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [selectedFormations, setSelectedFormations] = useState<string[]>([]);
-  const [deviceBlocked, setDeviceBlocked] = useState(false);
 
   useEffect(() => {
     capturePendingReferralFromUrl();
@@ -226,10 +213,6 @@ function App() {
         setCoins(wallet.coins);
         setReferralCode(wallet.referralCode);
         setUnlocked(wallet.unlocked);
-        if (wallet.unlocked) {
-          const status = await bindOrCheckDevice(authUser.uid, getDeviceId());
-          if (status === "blocked") setDeviceBlocked(true);
-        }
       } else {
         showToast("Impossible de charger ton portefeuille pour le moment.", "warning");
       }
@@ -269,8 +252,6 @@ function App() {
     setUnlocked(true);
     if (authUser) {
       await markAccessUnlocked(authUser.uid);
-      const status = await bindOrCheckDevice(authUser.uid, getDeviceId());
-      if (status === "blocked") setDeviceBlocked(true);
     }
   };
 
@@ -300,24 +281,6 @@ function App() {
       <main className="app-shell">
         <div className="phone-frame login-frame">
           <AuthView onNotify={showToast} />
-          {toast && <div className={`toast toast-${toast.kind}`} role="status"><span>{toast.message}</span><button type="button" aria-label="Fermer" onClick={() => setToast(null)}><X size={15} /></button></div>}
-        </div>
-      </main>
-    );
-  }
-
-  if (deviceBlocked) {
-    return (
-      <main className="app-shell">
-        <div className="phone-frame login-frame">
-          <DeviceBlockedView
-            onRequestReset={async () => {
-              if (!authUser) return;
-              const ok = await requestDeviceReset(authUser.uid);
-              showToast(ok ? "Demande envoyée. Contacte le support." : "Impossible d'envoyer la demande.", ok ? "success" : "warning");
-            }}
-            onLogout={handleLogout}
-          />
           {toast && <div className={`toast toast-${toast.kind}`} role="status"><span>{toast.message}</span><button type="button" aria-label="Fermer" onClick={() => setToast(null)}><X size={15} /></button></div>}
         </div>
       </main>
@@ -430,8 +393,6 @@ function FormationsView({ formations: list, selected, onToggle, onValidate, onBa
   </div>;
 }
 
-// Portefeuille : "wallet" = solde + parrainage ; "withdraw" = formulaire de
-// retrait plein ecran (remplace la vue, ne s'empile pas -> pas de defilement).
 function WalletView({
   coins,
   referralCode,
@@ -561,26 +522,6 @@ function WalletView({
       )}
     </section>
   </div>;
-}
-
-function DeviceBlockedView({ onRequestReset, onLogout }: { onRequestReset: () => Promise<void>; onLogout: () => void }) {
-  const [sent, setSent] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const handleRequest = async () => { setBusy(true); await onRequestReset(); setSent(true); setBusy(false); };
-  return (
-    <div className="login-view">
-      <span className="login-mark brand-mark" style={{ background: "hsl(var(--primary) / .15)", color: "hsl(var(--primary))" }}><AlertTriangle size={18} /></span>
-      <p className="eyebrow">ACCÈS RESTREINT</p>
-      <h1>Ce compte est déjà utilisé sur un autre appareil.</h1>
-      <p className="login-lead">Pour éviter le partage de compte, l'accès est limité à un seul appareil. Si tu as changé de téléphone légitimement, demande une réinitialisation ci-dessous.</p>
-      {sent ? (
-        <p className="login-note" style={{ marginTop: 16 }}><ShieldCheck size={13} /> Demande envoyée. Contacte le support.</p>
-      ) : (
-        <button type="button" className="auth-primary" style={{ marginTop: 16 }} onClick={handleRequest} disabled={busy}>{busy ? "Envoi..." : "Demander une réinitialisation"}</button>
-      )}
-      <button type="button" onClick={onLogout} style={{ marginTop: 12, border: 0, background: "transparent", color: "hsl(var(--muted-foreground))", fontSize: 12, cursor: "pointer" }}>Se déconnecter</button>
-    </div>
-  );
 }
 
 function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolean; onUnlocked: () => void; onToast: (message: string, kind?: ToastKind) => void }) {
