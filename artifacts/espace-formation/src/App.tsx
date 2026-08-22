@@ -3,9 +3,8 @@ import {
   AlertTriangle,
   ArrowRight,
   BookOpen,
-  Check,
+  ChevronDown,
   ChevronRight,
-  Clock3,
   Coins,
   Copy,
   FlaskConical,
@@ -17,9 +16,11 @@ import {
   ShieldCheck,
   Sparkles,
   Ticket,
+  TrendingUp,
   Trophy,
   UserRound,
   X,
+  Zap,
 } from "lucide-react";
 
 import { AuthView } from "@/components/auth-view";
@@ -31,13 +32,12 @@ type ToastKind = "success" | "warning" | "info";
 type AppUser = { displayName: string; email: string; photoURL?: string | null };
 type NavItem = "accueil" | "formations" | "acces-prive" | "portefeuille";
 
-interface Formation {
+interface PromoModule {
   id: string;
   title: string;
-  description: string;
-  lessons: number;
-  duration: string;
-  tone: "coral" | "teal" | "violet";
+  gradient: string;
+  icon: typeof TrendingUp;
+  detail: string;
 }
 
 interface Operator {
@@ -110,22 +110,31 @@ const COUNTRIES: Country[] = [
   },
 ];
 
-const formations: Formation[] = [
+// Les 3 modules presentes en bannieres (remplacent l'ancien ecran de selection).
+const MODULES: PromoModule[] = [
   {
-    id: "facebook-scores",
-    title: "Booster sa visibilité avec les scores en direct",
-    description: "Apprends à capter l'attention, générer des vues et créer une audience fidèle avec des contenus qui vivent en temps réel.",
-    lessons: 8,
-    duration: "1 h 40",
-    tone: "coral",
+    id: "adsense",
+    title: "Explosez vos revenus avec Google AdSense",
+    gradient: "linear-gradient(135deg, #4285F4, #34A853)",
+    icon: TrendingUp,
+    detail:
+      "Vous apprendrez à configurer votre site de A à Z pour obtenir l'approbation Google AdSense rapidement, même si vous partez de zéro. Vous recevrez également notre outil clé en main pour installer les publicités en deux clics, sans aucune connaissance technique. Connectez-vous ensuite au tableau de bord AdSense pour suivre vos gains en temps réel (solde, CPC, CTR).",
   },
   {
-    id: "onewin-promo",
-    title: "Gagner de l'argent avec un code promo",
-    description: "Une méthode pratique pour créer, configurer et monétiser ton propre code promo.",
-    lessons: 6,
-    duration: "1 h 15",
-    tone: "teal",
+    id: "promo",
+    title: "Monétisez votre audience avec le parrainage",
+    gradient: "linear-gradient(135deg, #16A34A, #F59E0B)",
+    icon: Gift,
+    detail:
+      "Maîtrisez l'art de l'affiliation et du parrainage. Nous vous montrerons comment créer votre propre code promo personnalisé et comment le diffuser pour attirer une communauté engagée. Vous apprendrez à lire et à surveiller l'interface partenaire pour visualiser instantanément votre solde de commissions, le nombre d'inscrits et l'évolution de vos revenus.",
+  },
+  {
+    id: "facebook",
+    title: "Automatisez vos scores en direct sur Facebook",
+    gradient: "linear-gradient(135deg, #1877F2, #0B5FCC)",
+    icon: Zap,
+    detail:
+      "L'automatisation est la clé. Dans ce module, apprenez à utiliser l'API Graph de Facebook pour connecter vos scripts et publier automatiquement les scores des matches, les buts et les résumés en temps réel sur votre page Facebook. C'est la méthode ultime pour capturer un trafic massif et diriger les fans de sport vers vos liens monétisés (AdSense et Code Promo), sans intervention manuelle.",
   },
 ];
 
@@ -189,7 +198,6 @@ function App() {
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [walletLoading, setWalletLoading] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
-  const [selectedFormations, setSelectedFormations] = useState<string[]>([]);
 
   useEffect(() => {
     capturePendingReferralFromUrl();
@@ -234,18 +242,6 @@ function App() {
     } catch {
       showToast("Déconnexion impossible pour le moment.", "warning");
     }
-  };
-
-  const toggleFormation = (id: string) => {
-    setSelectedFormations((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
-  };
-
-  const validateSelection = () => {
-    if (selectedFormations.length === 0) {
-      showToast("Sélectionne au moins une formation avant de continuer.", "warning");
-      return;
-    }
-    setActiveNav("acces-prive");
   };
 
   const handleUnlocked = async () => {
@@ -305,7 +301,7 @@ function App() {
             <HomeView firstName={firstName} unlocked={unlocked} onGoToFormations={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
           )}
           {activeNav === "formations" && (
-            <FormationsView formations={formations} selected={selectedFormations} onToggle={toggleFormation} onValidate={validateSelection} onBack={() => setActiveNav("accueil")} />
+            <ModulesView onBack={() => setActiveNav("accueil")} onContinue={() => setActiveNav("acces-prive")} />
           )}
           {activeNav === "acces-prive" && (
             <PrivateAccessView unlocked={unlocked} onUnlocked={handleUnlocked} onToast={showToast} />
@@ -358,7 +354,7 @@ function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: {
   return <div className="view-stack">
     <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p></section>
     <button type="button" className="progress-card animate-rise" onClick={onGoToFormations} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-      <div><p className="eyebrow">ÉTAPE 1</p><h2>Choisis tes formations</h2><p style={{ margin: "7px 0 0", color: "hsl(42 67% 98% / .62)", fontSize: 10 }}>Coche celles qui t'intéressent.</p></div>
+      <div><p className="eyebrow">ÉTAPE 1</p><h2>Découvre les modules</h2><p style={{ margin: "7px 0 0", color: "hsl(42 67% 98% / .62)", fontSize: 10 }}>AdSense, parrainage, automatisation.</p></div>
       <ArrowRight size={20} color="hsl(var(--accent))" />
     </button>
     <button type="button" className="community-card animate-rise" onClick={onGoToAccesPrive} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer" }}>
@@ -369,27 +365,79 @@ function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: {
   </div>;
 }
 
-function FormationsView({ formations: list, selected, onToggle, onValidate, onBack }: { formations: Formation[]; selected: string[]; onToggle: (id: string) => void; onValidate: () => void; onBack: () => void }) {
+// 3 bannieres cliquables : image (degrade + icone), titre en surimpression,
+// bouton "Voir plus de details" qui deplie le texte en dessous.
+function ModulesView({ onBack, onContinue }: { onBack: () => void; onContinue: () => void }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (id: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return <div className="view-stack formations-view">
     <div className="page-heading">
       <button type="button" className="back-button" onClick={onBack}><ArrowRight size={17} className="rotate-180" /></button>
-      <div><p className="eyebrow">ÉTAPE 1 · SÉLECTION</p><h1>Choisis tes formations</h1></div>
+      <div><p className="eyebrow">ÉTAPE 1 · MODULES</p><h1>Découvre les modules</h1></div>
     </div>
-    <div className="formation-list">
-      {list.map((formation) => {
-        const checked = selected.includes(formation.id);
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", flex: 1, minHeight: 0 }}>
+      {MODULES.map((mod) => {
+        const isOpen = expanded.has(mod.id);
+        const Icon = mod.icon;
         return (
-          <label key={formation.id} className={`module-card module-${formation.tone} module-full`} style={{ cursor: "pointer", outline: checked ? "2px solid hsl(var(--primary))" : "none", outlineOffset: 2 }}>
-            <div className="module-topline">
-              <span className="module-number"><input type="checkbox" checked={checked} onChange={() => onToggle(formation.id)} style={{ width: 18, height: 18, accentColor: "hsl(var(--primary))" }} /></span>
-              {checked && <Check size={17} />}
+          <div key={mod.id} style={{ borderRadius: 16, overflow: "hidden", border: "1px solid hsl(var(--border))" }}>
+            <div
+              style={{
+                background: mod.gradient,
+                padding: "20px 16px",
+                position: "relative",
+                minHeight: 96,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+              }}
+            >
+              <Icon size={28} color="rgba(255,255,255,0.85)" />
+              <h3 style={{ color: "#fff", fontSize: 15, fontWeight: 700, margin: "10px 0 0", lineHeight: 1.25 }}>{mod.title}</h3>
             </div>
-            <div className="module-content"><p>{formation.lessons} LEÇONS</p><h3>{formation.title}</h3><span><Clock3 size={12} /> {formation.duration}</span></div>
-          </label>
+            <button
+              type="button"
+              onClick={() => toggle(mod.id)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                padding: "10px 12px",
+                border: 0,
+                background: "hsl(var(--muted, 0 0% 96%))",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Voir plus de détails
+              <ChevronDown size={14} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+            </button>
+            {isOpen && (
+              <div style={{ padding: "12px 14px", fontSize: 12.5, lineHeight: 1.5, opacity: 0.85 }}>
+                {mod.detail}
+              </div>
+            )}
+          </div>
         );
       })}
     </div>
-    <button type="button" className="primary-button" onClick={onValidate}>Valider ma sélection ({selected.length}) <ArrowRight size={16} /></button>
+
+    <button type="button" className="primary-button" onClick={onContinue} style={{ marginTop: 4 }}>
+      Continuer vers le ticket <ArrowRight size={16} />
+    </button>
   </div>;
 }
 
