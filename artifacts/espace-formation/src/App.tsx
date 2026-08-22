@@ -10,6 +10,7 @@ import {
   FlaskConical,
   Gift,
   KeyRound,
+  Loader2,
   LogOut,
   Menu,
   MessageCircle,
@@ -110,7 +111,6 @@ const COUNTRIES: Country[] = [
   },
 ];
 
-// Les 3 modules presentes en bannieres (remplacent l'ancien ecran de selection).
 const MODULES: PromoModule[] = [
   {
     id: "adsense",
@@ -365,8 +365,6 @@ function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: {
   </div>;
 }
 
-// 3 bannieres cliquables : image (degrade + icone), titre en surimpression,
-// bouton "Voir plus de details" qui deplie le texte en dessous.
 function ModulesView({ onBack, onContinue }: { onBack: () => void; onContinue: () => void }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -540,7 +538,7 @@ function WalletView({
           style={{ width: "100%", marginTop: 6, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontSize: 15 }} />
 
         <button type="button" className="primary-button" onClick={handleWithdraw} disabled={busy} style={{ marginTop: 14 }}>
-          {busy ? "Envoi..." : "Confirmer le retrait"} <ArrowRight size={16} />
+          {busy ? <><Loader2 size={16} className="spin" /> Envoi...</> : <>Confirmer le retrait <ArrowRight size={16} /></>}
         </button>
       </section>
     </div>;
@@ -690,8 +688,8 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
           <input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))} placeholder={country.phonePlaceholder} style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }} />
         </div>
 
-        <button type="button" className="primary-button" onClick={handlePay} disabled={busy} style={{ marginTop: 16 }}>
-          {busy ? "Envoi en cours..." : "Payer le ticket"} <ArrowRight size={16} />
+        <button type="button" className="primary-button" onClick={handlePay} disabled={busy} style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          {busy ? <><Loader2 size={16} className="spin" /> Envoi en cours...</> : <>Payer le ticket <ArrowRight size={16} /></>}
         </button>
       </section>
     )}
@@ -718,8 +716,8 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
         )}
         <input type="text" value={enteredCode} onChange={(event) => setEnteredCode(event.target.value.toUpperCase())} placeholder="Ex: A3F7K9" maxLength={6}
           style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontFamily: "var(--font-mono)", fontSize: 16, letterSpacing: "0.15em", textAlign: "center" }} />
-        <button type="button" className="primary-button" onClick={handleRedeem} disabled={busy} style={{ marginTop: 12 }}>
-          {busy ? "Vérification..." : "Entrer le code et débloquer l'accès"} <ArrowRight size={16} />
+        <button type="button" className="primary-button" onClick={handleRedeem} disabled={busy} style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          {busy ? <><Loader2 size={16} className="spin" /> Vérification...</> : <>Entrer le code et débloquer l'accès <ArrowRight size={16} /></>}
         </button>
       </section>
     )}
