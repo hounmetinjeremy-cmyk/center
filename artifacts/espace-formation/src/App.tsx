@@ -492,7 +492,7 @@ function WalletView({
         <div><p className="eyebrow">RETRAIT MOBILE MONEY</p><h1>Où envoyer tes coins ?</h1></div>
       </div>
 
-      <section className="steps-card">
+      <section className="steps-card country-payment-selector notranslate" translate="no">
         <p className="eyebrow">PAYS</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 6 }}>
           {COUNTRIES.map((c) => (
@@ -519,7 +519,7 @@ function WalletView({
 
         <p className="eyebrow" style={{ marginTop: 12 }}>NUMÉRO DE TÉLÉPHONE</p>
         <div style={{ display: "flex", marginTop: 6, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
-          <span style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>+{country.dialCode}</span>
+          <span key={country.id} className="notranslate" translate="no" style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>+{country.dialCode}</span>
           <input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))} placeholder={country.phonePlaceholder} style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }} />
         </div>
 
@@ -645,7 +645,7 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
     <div className="page-heading"><div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div><span className="reward-icon"><Ticket size={18} /></span></div>
 
     {step === "form" && (
-      <section className="steps-card">
+      <section className="steps-card country-payment-selector notranslate" translate="no">
         <p className="eyebrow">1. CHOISIS TON PAYS</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 8 }}>
           {COUNTRIES.map((c) => (
@@ -672,7 +672,7 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
 
         <p className="eyebrow" style={{ marginTop: 16 }}>3. NUMÉRO DE TÉLÉPHONE</p>
         <div style={{ display: "flex", marginTop: 8, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
-          <span style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>+{country.dialCode}</span>
+          <span key={country.id} className="notranslate" translate="no" style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>+{country.dialCode}</span>
           <input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))} placeholder={country.phonePlaceholder} style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }} />
         </div>
 
