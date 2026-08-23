@@ -80,6 +80,7 @@ const COUNTRIES: Country[] = [
     id: "CIV", code: "ci", isoCode: "CI", flag: "🇨🇮", dialCode: "225", name: "Côte d'Ivoire", phonePlaceholder: "0712345678",
     operators: [
       { label: "MTN", mode: "mtn_ci", color: "#FFD700" },
+      { label: "Wave", mode: "wave_ci", color: "#1DA1F2" },
     ],
   },
   {
@@ -92,12 +93,6 @@ const COUNTRIES: Country[] = [
     id: "SEN", code: "sn", isoCode: "SN", flag: "🇸🇳", dialCode: "221", name: "Sénégal", phonePlaceholder: "771234567",
     operators: [
       { label: "Free", mode: "free_sn", color: "#E53935" },
-    ],
-  },
-  {
-    id: "GIN", code: "gn", isoCode: "GN", flag: "🇬🇳", dialCode: "224", name: "Guinée", phonePlaceholder: "621234567",
-    operators: [
-      { label: "MTN", mode: "mtn_open_gn", color: "#FFD700" },
     ],
   },
 ];
