@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Coins,
   Copy,
-  CreditCard,
   Gift,
   KeyRound,
   Loader2,
@@ -19,6 +18,7 @@ import {
   TrendingUp,
   Trophy,
   UserRound,
+  Wallet,
   X,
   Zap,
 } from "lucide-react";
@@ -694,7 +694,7 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
         </button>
 
         <button type="button" onClick={handlePayCard} disabled={busy} style={{ marginTop: 8, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", background: "transparent", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-          {busy ? <Loader2 size={16} className="auth-spin" /> : <CreditCard size={16} />} Autres moyens de paiement
+          {busy ? <Loader2 size={16} className="auth-spin" /> : <Wallet size={16} />} Autres moyens de paiement
         </button>
       </section>
     )}
@@ -706,7 +706,7 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
           <>
             <h2>Termine le paiement dans l'onglet ouvert</h2>
             <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
-              Un nouvel onglet s'est ouvert avec la page de paiement FedaPay (carte, Coris Money, BESTCASH et autres moyens disponibles). Une fois le paiement validé, reviens sur cette page : elle se met à jour automatiquement.
+              Un nouvel onglet s'est ouvert avec la page de paiement FedaPay (Mobile Money : Coris Money, BESTCASH et autres opérateurs disponibles). Une fois le paiement validé, reviens sur cette page : elle se met à jour automatiquement.
             </p>
           </>
         ) : (
