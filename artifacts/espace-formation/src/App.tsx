@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle,
   ArrowRight,
   BookOpen,
   ChevronDown,
   ChevronRight,
   Coins,
   Copy,
-  FlaskConical,
   Gift,
   KeyRound,
   Loader2,
@@ -45,7 +43,6 @@ interface Operator {
   label: string;
   mode: string;
   color: string;
-  isTest?: boolean;
 }
 
 interface Country {
@@ -70,7 +67,6 @@ const COUNTRIES: Country[] = [
       { label: "MTN", mode: "mtn_open", color: "#FFD700" },
       { label: "MOOV", mode: "moov", color: "#FF6B1A" },
       { label: "CELTIIS", mode: "sbin", color: "#4A90D9" },
-      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
@@ -78,35 +74,30 @@ const COUNTRIES: Country[] = [
     operators: [
       { label: "MOOV", mode: "moov_tg", color: "#FF6B1A" },
       { label: "Togocom", mode: "togocell", color: "#0070C0" },
-      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
     id: "CIV", code: "ci", isoCode: "CI", flag: "🇨🇮", dialCode: "225", name: "Côte d'Ivoire", phonePlaceholder: "0712345678",
     operators: [
       { label: "MTN", mode: "mtn_ci", color: "#FFD700" },
-      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
     id: "NER", code: "ne", isoCode: "NE", flag: "🇳🇪", dialCode: "227", name: "Niger", phonePlaceholder: "96123456",
     operators: [
       { label: "Airtel", mode: "airtel_ne", color: "#E53935" },
-      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
     id: "SEN", code: "sn", isoCode: "SN", flag: "🇸🇳", dialCode: "221", name: "Sénégal", phonePlaceholder: "771234567",
     operators: [
       { label: "Free", mode: "free_sn", color: "#E53935" },
-      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
   {
     id: "GIN", code: "gn", isoCode: "GN", flag: "🇬🇳", dialCode: "224", name: "Guinée", phonePlaceholder: "621234567",
     operators: [
       { label: "MTN", mode: "mtn_open_gn", color: "#FFD700" },
-      { label: "Momo Test", mode: "momo_test", color: "#6366F1", isTest: true },
     ],
   },
 ];
@@ -518,10 +509,9 @@ function WalletView({
           {country.operators.map((op) => (
             <button key={op.mode} type="button" onClick={() => setOperatorMode(op.mode)}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 11,
-                border: operatorMode === op.mode ? `2px solid ${op.color}` : op.isTest ? "1px dashed #A5B4FC" : "1px solid hsl(var(--border))",
-                background: operatorMode === op.mode ? op.color : op.isTest ? "rgba(99,102,241,0.08)" : "transparent",
-                color: operatorMode === op.mode ? "#fff" : op.isTest ? "#6366F1" : "inherit", cursor: "pointer" }}>
-              {op.isTest && <FlaskConical size={14} />}
+                border: operatorMode === op.mode ? `2px solid ${op.color}` : "1px solid hsl(var(--border))",
+                background: operatorMode === op.mode ? op.color : "transparent",
+                color: operatorMode === op.mode ? "#fff" : "inherit", cursor: "pointer" }}>
               {op.label}
             </button>
           ))}
@@ -538,7 +528,7 @@ function WalletView({
           style={{ width: "100%", marginTop: 6, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontSize: 15 }} />
 
         <button type="button" className="primary-button" onClick={handleWithdraw} disabled={busy} style={{ marginTop: 14 }}>
-          {busy ? <><Loader2 size={16} className="spin" /> Envoi...</> : <>Confirmer le retrait <ArrowRight size={16} /></>}
+          {busy ? <><Loader2 size={16} className="auth-spin" /> Envoi...</> : <>Confirmer le retrait <ArrowRight size={16} /></>}
         </button>
       </section>
     </div>;
@@ -672,15 +662,13 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
           {country.operators.map((op) => (
             <button key={op.mode} type="button" onClick={() => setOperatorMode(op.mode)}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 11,
-                border: operatorMode === op.mode ? `2px solid ${op.color}` : op.isTest ? "1px dashed #A5B4FC" : "1px solid hsl(var(--border))",
-                background: operatorMode === op.mode ? op.color : op.isTest ? "rgba(99,102,241,0.08)" : "transparent",
-                color: operatorMode === op.mode ? "#fff" : op.isTest ? "#6366F1" : "inherit", cursor: "pointer" }}>
-              {op.isTest && <FlaskConical size={14} />}
+                border: operatorMode === op.mode ? `2px solid ${op.color}` : "1px solid hsl(var(--border))",
+                background: operatorMode === op.mode ? op.color : "transparent",
+                color: operatorMode === op.mode ? "#fff" : "inherit", cursor: "pointer" }}>
               {op.label}
             </button>
           ))}
         </div>
-        {operatorMode === "momo_test" && <p style={{ marginTop: 6, fontSize: 10, opacity: 0.65 }}>Mode test : le paiement sera automatiquement approuvé par FedaPay, aucun vrai numéro requis.</p>}
 
         <p className="eyebrow" style={{ marginTop: 16 }}>3. NUMÉRO DE TÉLÉPHONE</p>
         <div style={{ display: "flex", marginTop: 8, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
@@ -689,7 +677,7 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
         </div>
 
         <button type="button" className="primary-button" onClick={handlePay} disabled={busy} style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          {busy ? <><Loader2 size={16} className="spin" /> Envoi en cours...</> : <>Payer le ticket <ArrowRight size={16} /></>}
+          {busy ? <><Loader2 size={16} className="auth-spin" /> Envoi en cours...</> : <>Payer le ticket <ArrowRight size={16} /></>}
         </button>
       </section>
     )}
@@ -717,7 +705,7 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
         <input type="text" value={enteredCode} onChange={(event) => setEnteredCode(event.target.value.toUpperCase())} placeholder="Ex: A3F7K9" maxLength={6}
           style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontFamily: "var(--font-mono)", fontSize: 16, letterSpacing: "0.15em", textAlign: "center" }} />
         <button type="button" className="primary-button" onClick={handleRedeem} disabled={busy} style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          {busy ? <><Loader2 size={16} className="spin" /> Vérification...</> : <>Entrer le code et débloquer l'accès <ArrowRight size={16} /></>}
+          {busy ? <><Loader2 size={16} className="auth-spin" /> Vérification...</> : <>Entrer le code et débloquer l'accès <ArrowRight size={16} /></>}
         </button>
       </section>
     )}
