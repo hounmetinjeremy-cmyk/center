@@ -73,7 +73,7 @@ const COUNTRIES: Country[] = [
     id: "TGO", code: "tg", isoCode: "TG", flag: "🇹🇬", dialCode: "228", name: "Togo", phonePlaceholder: "90123456",
     operators: [
       { label: "MOOV", mode: "moov_tg", color: "#FF6B1A" },
-      { label: "TOGOCEL T-Money", mode: "togocell", color: "#0070C0" },
+      { label: "TOGOCEL T-Money", mode: "togocel", color: "#0070C0" },
     ],
   },
   {
