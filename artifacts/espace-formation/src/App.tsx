@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Coins,
   Copy,
+  CreditCard,
   Gift,
   KeyRound,
   Loader2,
@@ -25,7 +26,7 @@ import {
 import { AuthView } from "@/components/auth-view";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
-import { payMobile, checkPaymentStatus, redeemTicketCode, requestWithdrawal } from "@/lib/access-api";
+import { payMobile, payCard, checkPaymentStatus, redeemTicketCode, requestWithdrawal } from "@/lib/access-api";
 
 type ToastKind = "success" | "warning" | "info";
 type AppUser = { displayName: string; email: string; photoURL?: string | null };
@@ -566,6 +567,7 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
   const [busy, setBusy] = useState(false);
   const [waitingDialCode, setWaitingDialCode] = useState("");
   const [waitingPhone, setWaitingPhone] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"mobile" | "card">("mobile");
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
 
@@ -594,12 +596,29 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
     if (phoneNumber.trim().length < 6) { onToast("Entre un numéro de téléphone valide.", "warning"); return; }
     setBusy(true);
     try {
+      setPaymentMethod("mobile");
       setWaitingDialCode(country.dialCode);
       setWaitingPhone(phoneNumber.trim());
       const result = await payMobile(phoneNumber.trim(), country.isoCode, operatorMode);
       setTransactionId(result.transactionId);
       setStep("waiting");
       onToast(result.message ?? "Demande envoyée sur ton téléphone.", "success");
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Une erreur est survenue.", "warning");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePayCard = async () => {
+    setBusy(true);
+    try {
+      setPaymentMethod("card");
+      const result = await payCard("");
+      setTransactionId(result.transactionId);
+      setStep("waiting");
+      window.open(result.paymentUrl, "_blank", "noopener,noreferrer");
+      onToast("Page de paiement carte ouverte dans un nouvel onglet.", "success");
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Une erreur est survenue.", "warning");
     } finally {
@@ -674,16 +693,31 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
         <button type="button" className="primary-button" onClick={handlePay} disabled={busy} style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
           {busy ? <><Loader2 size={16} className="auth-spin" /> Envoi en cours...</> : <>Payer le ticket <ArrowRight size={16} /></>}
         </button>
+
+        <button type="button" onClick={handlePayCard} disabled={busy} style={{ marginTop: 8, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", background: "transparent", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+          {busy ? <Loader2 size={16} className="auth-spin" /> : <CreditCard size={16} />} Payer par carte bancaire
+        </button>
       </section>
     )}
 
     {step === "waiting" && (
       <section className="steps-card" style={{ textAlign: "center" }}>
         <p className="eyebrow">PAIEMENT EN ATTENTE</p>
-        <h2>Confirme sur ton téléphone</h2>
-        <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
-          Une notification a été envoyée sur ton numéro +{waitingDialCode} {waitingPhone}. Valide le paiement via ton opérateur mobile money. Cette page se met à jour automatiquement.
-        </p>
+        {paymentMethod === "card" ? (
+          <>
+            <h2>Termine le paiement dans l'onglet ouvert</h2>
+            <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
+              Un nouvel onglet s'est ouvert avec la page de paiement carte bancaire. Une fois le paiement validé, reviens sur cette page : elle se met à jour automatiquement.
+            </p>
+          </>
+        ) : (
+          <>
+            <h2>Confirme sur ton téléphone</h2>
+            <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
+              Une notification a été envoyée sur ton numéro +{waitingDialCode} {waitingPhone}. Valide le paiement via ton opérateur mobile money. Cette page se met à jour automatiquement.
+            </p>
+          </>
+        )}
       </section>
     )}
 
