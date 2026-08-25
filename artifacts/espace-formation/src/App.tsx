@@ -661,36 +661,48 @@ function WalletView({
 }
 
 function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked: boolean; userId: string | null; onUnlocked: () => void; onToast: (message: string, kind?: ToastKind) => void }) {
-  const [step, setStep] = useState<"form" | "waiting" | "redeem" | "done">(unlocked ? "done" : "form");
+  const [step, setStep] = useState<"form" | "redeem" | "done">(unlocked ? "done" : "form");
   const [countryId, setCountryId] = useState(COUNTRIES[0].id);
   const [operatorMode, setOperatorMode] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [transactionId, setTransactionId] = useState<number | null>(null);
+  const [pendingSince, setPendingSince] = useState<number | null>(null);
+  const [pendingDialCode, setPendingDialCode] = useState("");
+  const [pendingPhone, setPendingPhone] = useState("");
   const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [enteredCode, setEnteredCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [waitingDialCode, setWaitingDialCode] = useState("");
-  const [waitingPhone, setWaitingPhone] = useState("");
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
 
+  const PENDING_TIMEOUT_MS = 45_000;
+
   useEffect(() => {
-    if (step !== "waiting" || !transactionId) return;
+    if (!transactionId || !pendingSince) return;
     const interval = window.setInterval(async () => {
+      if (Date.now() - pendingSince > PENDING_TIMEOUT_MS) {
+        setTransactionId(null);
+        setPendingSince(null);
+        onToast("Erreur de numéro ou d'opérateur. Veuillez changer votre numéro / opérateur.", "warning");
+        return;
+      }
       try {
         const result = await checkPaymentStatus(transactionId);
         if (result.status === "approved" && result.ticketCode) {
           setTicketCode(result.ticketCode);
           setStep("redeem");
+          setTransactionId(null);
+          setPendingSince(null);
           onToast("Paiement confirmé ! Voici ton code ticket.", "success");
         } else if (result.status === "declined" || result.status === "canceled") {
-          setStep("form");
+          setTransactionId(null);
+          setPendingSince(null);
           onToast("Paiement refusé ou annulé. Réessaie.", "warning");
         }
       } catch { /* on reessaiera au prochain tick */ }
     }, 3000);
     return () => window.clearInterval(interval);
-  }, [step, transactionId, onToast]);
+  }, [transactionId, pendingSince, onToast]);
 
   const handleCountryChange = (id: string) => { setCountryId(id); setOperatorMode(""); setPhoneNumber(""); };
 
@@ -700,11 +712,11 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
     if (!userId) { onToast("Connecte-toi avant de payer.", "warning"); return; }
     setBusy(true);
     try {
-      setWaitingDialCode(country.dialCode);
-      setWaitingPhone(phoneNumber.trim());
       const result = await payMobile(phoneNumber.trim(), country.isoCode, operatorMode, userId);
+      setPendingDialCode(country.dialCode);
+      setPendingPhone(phoneNumber.trim());
       setTransactionId(result.transactionId);
-      setStep("waiting");
+      setPendingSince(Date.now());
       onToast(result.message ?? "Demande envoyée sur ton téléphone.", "success");
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Une erreur est survenue.", "warning");
@@ -780,16 +792,13 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
         <button type="button" className="primary-button" onClick={handlePay} disabled={busy} style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
           {busy ? <><Loader2 size={16} className="auth-spin" /> Envoi en cours...</> : <>Payer le ticket <ArrowRight size={16} /></>}
         </button>
-      </section>
-    )}
 
-    {step === "waiting" && (
-      <section className="steps-card" style={{ textAlign: "center" }}>
-        <p className="eyebrow">PAIEMENT EN ATTENTE</p>
-        <h2>Confirme sur ton téléphone</h2>
-        <p style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
-          Une notification a été envoyée sur ton numéro +{waitingDialCode} {waitingPhone}. Valide le paiement via ton opérateur mobile money. Cette page se met à jour automatiquement.
-        </p>
+        {transactionId && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "9px 12px", borderRadius: 10, background: "hsl(var(--muted, 0 0% 96%))", fontSize: 11 }}>
+            <Loader2 size={13} className="auth-spin" style={{ flex: "0 0 auto" }} />
+            <span>En attente de confirmation sur +{pendingDialCode} {pendingPhone}. Tu peux corriger ton numéro/opérateur et relancer à tout moment si besoin.</span>
+          </div>
+        )}
       </section>
     )}
 
