@@ -672,6 +672,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
   const [ticketCode, setTicketCode] = useState<string | null>(null);
   const [enteredCode, setEnteredCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
 
@@ -683,7 +684,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
       if (Date.now() - pendingSince > PENDING_TIMEOUT_MS) {
         setTransactionId(null);
         setPendingSince(null);
-        onToast("Erreur de paiement : Veuillez vérifier votre numéro ou changer d'opérateur.", "warning");
+        setPaymentError("Aucune confirmation reçue de ton opérateur. Vérifie que le numéro correspond bien à l'opérateur choisi, puis réessaie.");
         return;
       }
       try {
@@ -697,20 +698,21 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
         } else if (result.status === "declined" || result.status === "canceled") {
           setTransactionId(null);
           setPendingSince(null);
-          onToast("Paiement refusé ou annulé. Réessaie.", "warning");
+          setPaymentError("Paiement refusé ou annulé par l'opérateur. Vérifie ton numéro/opérateur, puis réessaie.");
         }
       } catch { /* on reessaiera au prochain tick */ }
     }, 3000);
     return () => window.clearInterval(interval);
   }, [transactionId, pendingSince, onToast]);
 
-  const handleCountryChange = (id: string) => { setCountryId(id); setOperatorMode(""); setPhoneNumber(""); };
+  const handleCountryChange = (id: string) => { setCountryId(id); setOperatorMode(""); setPhoneNumber(""); setPaymentError(null); };
 
   const handlePay = async () => {
     if (!operatorMode) { onToast("Choisis ton opérateur mobile money.", "warning"); return; }
     if (phoneNumber.trim().length < 6) { onToast("Entre un numéro de téléphone valide.", "warning"); return; }
     if (!userId) { onToast("Connecte-toi avant de payer.", "warning"); return; }
     setBusy(true);
+    setPaymentError(null);
     try {
       const result = await payMobile(phoneNumber.trim(), country.isoCode, operatorMode, userId);
       setPendingDialCode(country.dialCode);
@@ -719,8 +721,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
       setPendingSince(Date.now());
       onToast(result.message ?? "Demande envoyée sur ton téléphone.", "success");
     } catch (err) {
-      if (err instanceof Error) console.error("[pay/mobile]", err.message);
-      onToast("Erreur de paiement : Veuillez vérifier votre numéro ou changer d'opérateur.", "warning");
+      setPaymentError(err instanceof Error ? err.message : "Erreur de paiement. Vérifie ton numéro ou change d'opérateur.");
     } finally {
       setBusy(false);
     }
@@ -774,7 +775,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
         <p className="eyebrow" style={{ marginTop: 16 }}>2. CHOISIS TON OPÉRATEUR</p>
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(country.operators.length, 3)}, 1fr)`, gap: 6, marginTop: 8 }}>
           {country.operators.map((op) => (
-            <button key={op.mode} type="button" onClick={() => setOperatorMode(op.mode)}
+            <button key={op.mode} type="button" onClick={() => { setOperatorMode(op.mode); setPaymentError(null); }}
               style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "10px 4px", borderRadius: 10, fontWeight: 700, fontSize: 11,
                 border: operatorMode === op.mode ? `2px solid ${op.color}` : "1px solid hsl(var(--border))",
                 background: operatorMode === op.mode ? op.color : "transparent",
@@ -787,8 +788,18 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
         <p className="eyebrow" style={{ marginTop: 16 }}>3. NUMÉRO DE TÉLÉPHONE</p>
         <div style={{ display: "flex", marginTop: 8, border: "1px solid hsl(var(--border))", borderRadius: 10, overflow: "hidden" }}>
           <span key={country.id} className="notranslate" translate="no" style={{ display: "flex", alignItems: "center", padding: "0 10px", background: "hsl(var(--muted, 0 0% 96%))", fontSize: 13, fontWeight: 600 }}>+{country.dialCode}</span>
-          <input type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))} placeholder={country.phonePlaceholder} style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }} />
+          <input type="tel" value={phoneNumber} onChange={(e) => { setPhoneNumber(e.target.value.replace(/\D/g, "")); setPaymentError(null); }} placeholder={country.phonePlaceholder} style={{ flex: 1, border: 0, padding: "10px 12px", fontSize: 15 }} />
         </div>
+
+        {paymentError && (
+          <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 14, padding: "12px 14px", borderRadius: 12, border: "1px solid hsl(4 70% 55% / .4)", background: "hsl(4 70% 55% / .1)", color: "hsl(4 65% 38%)" }}>
+            <X size={15} style={{ flex: "0 0 auto", marginTop: 1, cursor: "pointer" }} onClick={() => setPaymentError(null)} />
+            <div style={{ flex: 1, fontSize: 12, lineHeight: 1.5 }}>
+              <strong style={{ display: "block", marginBottom: 2, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>Échec du paiement</strong>
+              {paymentError}
+            </div>
+          </div>
+        )}
 
         <button type="button" className="primary-button" onClick={handlePay} disabled={busy} style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
           {busy ? <><Loader2 size={16} className="auth-spin" /> Envoi en cours...</> : <>Payer le ticket <ArrowRight size={16} /></>}
