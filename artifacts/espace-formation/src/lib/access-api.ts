@@ -86,6 +86,17 @@ export async function redeemTicketCode(code: string): Promise<{ inviteUrl: strin
   return parseJsonOrThrow(res);
 }
 
+// --- Réclame un ticket gratuit accordé manuellement (côté admin) ---
+export async function claimCompTicket(userId: string): Promise<{ ticketCode: string }> {
+  const res = await fetch(`${API_BASE}/pay/comp`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId }),
+  });
+  return parseJsonOrThrow(res);
+}
+
 // --- Demande de retrait (coins -> Mobile Money) ---
 export async function requestWithdrawal(params: {
   userId: string;

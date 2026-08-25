@@ -291,6 +291,16 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(cors, { inviteUrl: WHATSAPP_GROUP_INVITE_URL }, 200, { "Set-Cookie": setCookieHeader("", 0) });
   }
 
+  if (path === "/pay/comp" && req.method === "POST") {
+    const body = await req.json().catch(() => ({}));
+    const userId = typeof body?.userId === "string" ? body.userId : "";
+    if (!userId) return jsonResponse(cors, { message: "userId manquant." }, 400);
+    const { ok, data } = await rpc("consume_comp_ticket", { p_user_id: userId });
+    if (!ok || data !== true) return jsonResponse(cors, { message: "Aucun ticket gratuit disponible pour ce compte." }, 403);
+    const { code, header } = await issueTicketCookie();
+    return jsonResponse(cors, { ticketCode: code }, 200, { "Set-Cookie": header });
+  }
+
   if (path === "/withdraw/request" && req.method === "POST") {
     const body = await req.json().catch(() => ({}));
     const userId = typeof body?.userId === "string" ? body.userId : "";
