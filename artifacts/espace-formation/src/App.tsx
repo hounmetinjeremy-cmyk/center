@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Coins,
   Copy,
+  Gauge,
   Gift,
   KeyRound,
   Loader2,
@@ -633,15 +634,15 @@ function WalletView({
       <span className="reward-icon"><Trophy size={18} /></span>
     </div>
     <section className="reward-card">
-      <Coins size={26} className={drip ? "coin-dripping" : undefined} />
+      <div className="coin-ring-badge"><Coins size={22} className={drip ? "coin-dripping" : undefined} /></div>
       <p>Ton solde de pièces</p>
       <strong>{coins}</strong>
       <span>Gagne des coins en parrainant tes amis. Retrait possible dès {WITHDRAWAL_THRESHOLD} coins.</span>
       {drip && (
-        <>
-          <div className="drip-status"><Loader2 size={11} className="auth-spin" /> +{dripPending} coin en cours de versement...</div>
-          <div className="drip-track"><span style={{ width: `${dripProgress * 100}%` }} /></div>
-        </>
+        <div className="drip-status">
+          <span className="drip-gauge"><Gauge size={14} /></span>
+          +{dripPending} coin en cours de versement...
+        </div>
       )}
       <button type="button" onClick={handleOpenWithdraw}>Demander un retrait <ArrowRight size={16} /></button>
     </section>
