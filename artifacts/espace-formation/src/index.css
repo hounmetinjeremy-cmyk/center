@@ -185,6 +185,12 @@ button:disabled { cursor: wait; opacity: .7; }
 .reward-card strong { display: block; margin: 6px 0 1px; color: hsl(var(--accent)); font-size: clamp(32px, 6vh, 47px); letter-spacing: -.1em; }
 .reward-card > span { color: hsl(42 67% 98% / .55); font-size: 10px; }
 .reward-card button { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; margin-top: 17px; padding: 11px; border: 0; border-radius: 11px; color: hsl(33 40% 19%); background: hsl(var(--accent)); font-size: 10px; font-weight: 800; }
+@keyframes coin-drip-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); filter: drop-shadow(0 0 6px hsl(var(--accent) / .7)); } }
+.reward-card > svg.coin-dripping { animation: coin-drip-pulse 1s ease-in-out infinite; }
+.drip-status { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 9px; color: hsl(var(--accent)); font: 600 10px var(--font-mono); }
+.drip-status .auth-spin { animation-duration: 1.6s; }
+.drip-track { height: 4px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: hsl(42 67% 98% / .15); }
+.drip-track span { display: block; height: 100%; border-radius: inherit; background: hsl(var(--accent)); transition: width 1s linear; }
 .steps-card { padding: clamp(13px, 2vh, 19px); border: 1px solid hsl(var(--border)); border-radius: 22px; background: hsl(var(--card) / .7); }
 .reward-step { display: flex; align-items: center; gap: 10px; padding-top: clamp(8px, 1.5vh, 15px); }
 .reward-step > span { width: 22px; color: hsl(var(--muted-foreground)); font: 500 9px var(--font-mono); }

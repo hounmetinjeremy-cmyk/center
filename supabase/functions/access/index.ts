@@ -126,16 +126,33 @@ function fedaPayApiBase(mode: string) {
   return mode === "live" ? "https://api.fedapay.com/v1" : "https://sandbox-api.fedapay.com/v1";
 }
 
-async function readTransactionFromDb(transactionId: string): Promise<string | null> {
+async function readTransactionFromDb(transactionId: string): Promise<{ status: string | null; userId: string | null }> {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/fedapay_transactions?transaction_id=eq.${transactionId}&select=status`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/fedapay_transactions?transaction_id=eq.${transactionId}&select=status,user_id`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
     });
-    if (!res.ok) return null;
-    const rows = (await res.json()) as Array<{ status: string }>;
-    return rows[0]?.status ?? null;
+    if (!res.ok) return { status: null, userId: null };
+    const rows = (await res.json()) as Array<{ status: string; user_id: string | null }>;
+    return { status: rows[0]?.status ?? null, userId: rows[0]?.user_id ?? null };
   } catch {
-    return null;
+    return { status: null, userId: null };
+  }
+}
+
+async function upsertFedapayTransaction(transactionId: number, status: string, userId: string | null): Promise<void> {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/fedapay_transactions`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({ transaction_id: transactionId, status, user_id: userId, updated_at: new Date().toISOString() }),
+    });
+  } catch {
+    // non-critique : le webhook ecrira quand meme le statut plus tard
   }
 }
 
@@ -204,11 +221,13 @@ Deno.serve(async (req: Request) => {
     const phoneNumber = typeof body?.phoneNumber === "string" ? body.phoneNumber : "";
     const country = typeof body?.country === "string" ? body.country : "";
     const operator = typeof body?.operator === "string" ? body.operator : "";
+    const userId = typeof body?.userId === "string" && body.userId ? body.userId : null;
     const mode = body?.mode === "live" ? "live" : "sandbox";
     if (!phoneNumber || !country || !operator) return jsonResponse(cors, { message: "phoneNumber, country et operator sont requis." }, 400);
     try {
       const apiBase = fedaPayApiBase(mode);
       const tx = await createFedaPayTransaction(apiBase, secretKey, { amount: TICKET_PRICE_XOF, description: "Ticket d'entree - Espace de Formation", customerEmail: FEDAPAY_CUSTOMER_EMAIL, customerFirstname: "Client", customerLastname: "Formation", phoneNumber, country });
+      if (userId) await upsertFedapayTransaction(tx.id, "pending", userId);
       const { token } = await generateFedaPayToken(apiBase, secretKey, tx.id);
       const payRes = await fetch(`${apiBase}/${operator}`, { method: "POST", headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ token, phone_number: { number: phoneNumber.replace(/\D/g, ""), country: country.toLowerCase() } }) });
       const rawPay = await payRes.text();
@@ -241,8 +260,9 @@ Deno.serve(async (req: Request) => {
   if (path === "/pay/status" && req.method === "GET") {
     const transactionId = url.searchParams.get("transactionId") ?? "";
     if (!transactionId) return jsonResponse(cors, { message: "transactionId manquant." }, 400);
-    const dbStatus = await readTransactionFromDb(transactionId);
+    const { status: dbStatus, userId } = await readTransactionFromDb(transactionId);
     if (dbStatus === "approved") {
+      if (userId) await rpc("grant_access_and_start_referral_drip", { p_user_id: userId });
       const { code, header } = await issueTicketCookie();
       return jsonResponse(cors, { status: "approved", ticketCode: code }, 200, { "Set-Cookie": header });
     }
@@ -260,6 +280,7 @@ Deno.serve(async (req: Request) => {
       const tx = (data?.["v1/transaction"] as Record<string, unknown>) ?? (data?.transaction as Record<string, unknown>) ?? data;
       const status = (tx?.status as string) ?? "pending";
       if (status === "approved") {
+        if (userId) await rpc("grant_access_and_start_referral_drip", { p_user_id: userId });
         const { code, header } = await issueTicketCookie();
         return jsonResponse(cors, { status, ticketCode: code }, 200, { "Set-Cookie": header });
       }

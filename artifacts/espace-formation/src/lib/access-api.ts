@@ -12,13 +12,14 @@ async function parseJsonOrThrow(response: Response) {
 }
 
 // --- Paiement Mobile Money ---
-// customerEmail : email reel de l'utilisateur connecte (FedaPay Sandbox peut
-// rejeter les domaines manifestement factices).
+// userId : uid de l'utilisateur connecte, associe a la transaction cote
+// serveur pour pouvoir declencher la recompense de parrainage une fois le
+// paiement approuve (voir grant_access_and_start_referral_drip).
 export async function payMobile(
   phoneNumber: string,
   country: string,
   operator: string,
-  customerEmail: string,
+  userId: string,
 ): Promise<{
   transactionId: number;
   status: string;
@@ -28,7 +29,7 @@ export async function payMobile(
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phoneNumber, country, operator, customerEmail }),
+    body: JSON.stringify({ phoneNumber, country, operator, userId }),
   });
   return parseJsonOrThrow(res);
 }

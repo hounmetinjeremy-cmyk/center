@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -57,7 +57,8 @@ interface Country {
 }
 
 const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
-const REFERRAL_REWARD_COINS = 100;
+const REFERRAL_REWARD_COINS = 1;
+const REFERRAL_DRIP_HOURS = 3;
 const WITHDRAWAL_THRESHOLD = 3000;
 
 const COUNTRIES: Country[] = [
@@ -279,7 +280,7 @@ function App() {
       }
       const claimed = await claimPendingReferral(authUser.uid);
       if (claimed) {
-        showToast("Code de parrainage validé, ton ami a reçu ses coins !", "success");
+        showToast("Code de parrainage validé ! Ton ami recevra ses coins quand tu paieras ton ticket.", "success");
         const refreshed = await syncWallet(authUser.uid, null, null, null);
         if (refreshed) setCoins(refreshed.coins);
       }
@@ -357,7 +358,7 @@ function App() {
             <ModulesView onBack={() => setActiveNav("accueil")} onContinue={() => setActiveNav("acces-prive")} />
           )}
           {activeNav === "acces-prive" && (
-            <PrivateAccessView unlocked={unlocked} onUnlocked={handleUnlocked} onToast={showToast} />
+            <PrivateAccessView unlocked={unlocked} userId={authUser?.uid ?? null} onUnlocked={handleUnlocked} onToast={showToast} />
           )}
           {activeNav === "portefeuille" && (
             <WalletView coins={coins} referralCode={referralCode} userId={authUser?.uid ?? null} onCopyReferral={copyReferralLink} onToast={showToast} onCoinsUpdated={refreshCoins} />
@@ -509,9 +510,43 @@ function WalletView({
   const [phoneNumber, setPhoneNumber] = useState("");
   const [amount, setAmount] = useState(String(WITHDRAWAL_THRESHOLD));
   const [busy, setBusy] = useState(false);
+  const [drip, setDrip] = useState<{ startedAt: number; endsAt: number; totalCoins: number } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const hadDripRef = useRef(false);
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
   const canWithdraw = coins >= WITHDRAWAL_THRESHOLD;
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    const fetchDrip = async () => {
+      const { data } = await supabase.rpc("get_active_referral_drip", { p_user_id: userId });
+      if (cancelled) return;
+      const row = Array.isArray(data) ? data[0] : null;
+      if (row) {
+        hadDripRef.current = true;
+        setDrip({ startedAt: new Date(row.started_at).getTime(), endsAt: new Date(row.ends_at).getTime(), totalCoins: row.total_coins });
+      } else {
+        if (hadDripRef.current) onCoinsUpdated(); // un versement vient de se terminer : rafraichir le vrai solde
+        hadDripRef.current = false;
+        setDrip(null);
+      }
+    };
+    fetchDrip();
+    const poll = window.setInterval(fetchDrip, 30_000);
+    return () => { cancelled = true; window.clearInterval(poll); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  useEffect(() => {
+    if (!drip) return;
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(tick);
+  }, [drip]);
+
+  const dripProgress = drip ? Math.min(1, Math.max(0, (now - drip.startedAt) / (drip.endsAt - drip.startedAt))) : 0;
+  const dripPending = drip ? (dripProgress * drip.totalCoins).toFixed(2) : null;
 
   const handleOpenWithdraw = () => {
     if (!canWithdraw) {
@@ -598,17 +633,23 @@ function WalletView({
       <span className="reward-icon"><Trophy size={18} /></span>
     </div>
     <section className="reward-card">
-      <Coins size={26} />
+      <Coins size={26} className={drip ? "coin-dripping" : undefined} />
       <p>Ton solde de pièces</p>
       <strong>{coins}</strong>
       <span>Gagne des coins en parrainant tes amis. Retrait possible dès {WITHDRAWAL_THRESHOLD} coins.</span>
+      {drip && (
+        <>
+          <div className="drip-status"><Loader2 size={11} className="auth-spin" /> +{dripPending} coin en cours de versement...</div>
+          <div className="drip-track"><span style={{ width: `${dripProgress * 100}%` }} /></div>
+        </>
+      )}
       <button type="button" onClick={handleOpenWithdraw}>Demander un retrait <ArrowRight size={16} /></button>
     </section>
     <section className="reward-card">
       <Gift size={26} />
       <p>Parraine tes amis</p>
-      <strong>+{REFERRAL_REWARD_COINS} coins</strong>
-      <span>Par filleul·e qui rejoint l'espace de formation avec ton lien.</span>
+      <strong>+{REFERRAL_REWARD_COINS} coin</strong>
+      <span>Par filleul·e qui paie son ticket d'entrée avec ton lien (crédité progressivement sur {REFERRAL_DRIP_HOURS}h).</span>
       {referralCode ? (
         <button type="button" onClick={onCopyReferral}><Copy size={15} /> Copier mon lien ({referralCode})</button>
       ) : (
@@ -618,7 +659,7 @@ function WalletView({
   </div>;
 }
 
-function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolean; onUnlocked: () => void; onToast: (message: string, kind?: ToastKind) => void }) {
+function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked: boolean; userId: string | null; onUnlocked: () => void; onToast: (message: string, kind?: ToastKind) => void }) {
   const [step, setStep] = useState<"form" | "waiting" | "redeem" | "done">(unlocked ? "done" : "form");
   const [countryId, setCountryId] = useState(COUNTRIES[0].id);
   const [operatorMode, setOperatorMode] = useState("");
@@ -655,11 +696,12 @@ function PrivateAccessView({ unlocked, onUnlocked, onToast }: { unlocked: boolea
   const handlePay = async () => {
     if (!operatorMode) { onToast("Choisis ton opérateur mobile money.", "warning"); return; }
     if (phoneNumber.trim().length < 6) { onToast("Entre un numéro de téléphone valide.", "warning"); return; }
+    if (!userId) { onToast("Connecte-toi avant de payer.", "warning"); return; }
     setBusy(true);
     try {
       setWaitingDialCode(country.dialCode);
       setWaitingPhone(phoneNumber.trim());
-      const result = await payMobile(phoneNumber.trim(), country.isoCode, operatorMode);
+      const result = await payMobile(phoneNumber.trim(), country.isoCode, operatorMode, userId);
       setTransactionId(result.transactionId);
       setStep("waiting");
       onToast(result.message ?? "Demande envoyée sur ton téléphone.", "success");
