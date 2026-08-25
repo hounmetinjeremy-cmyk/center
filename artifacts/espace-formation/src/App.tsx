@@ -29,7 +29,7 @@ import {
 import { AuthView } from "@/components/auth-view";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
-import { payMobile, checkPaymentStatus, redeemTicketCode, requestWithdrawal, claimCompTicket } from "@/lib/access-api";
+import { payMobile, checkPaymentStatus, redeemTicketCode, requestWithdrawal, claimCompTicket, checkExistingTicket } from "@/lib/access-api";
 
 type ToastKind = "success" | "warning" | "info";
 type AppUser = { displayName: string; email: string; photoURL?: string | null };
@@ -854,19 +854,29 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
     }
   };
 
-  // Verifie silencieusement si ce compte a un ticket gratuit en attente
-  // (accorde manuellement cote admin) : si oui, on saute directement a
-  // l'etape de validation du code, sans passer par le paiement.
+  // Restaure un ticket deja emis (cookie encore valide) si la page a ete
+  // rechargee avant que le code ait ete tape, sinon verifie silencieusement
+  // si ce compte a un ticket gratuit en attente (accorde manuellement cote
+  // admin) : si oui, on saute directement a l'etape de validation du code,
+  // sans passer par le paiement.
   useEffect(() => {
     if (unlocked || !userId) return;
     let cancelled = false;
-    claimCompTicket(userId)
-      .then(({ ticketCode: code }) => {
+    checkExistingTicket()
+      .then(({ hasTicket, ticketCode: existingCode }) => {
         if (cancelled) return;
-        setTicketCode(code);
-        setStep("redeem");
+        if (hasTicket && existingCode) {
+          setTicketCode(existingCode);
+          setStep("redeem");
+          return;
+        }
+        return claimCompTicket(userId).then(({ ticketCode: code }) => {
+          if (cancelled) return;
+          setTicketCode(code);
+          setStep("redeem");
+        });
       })
-      .catch(() => { /* pas de ticket gratuit disponible : flux normal */ });
+      .catch(() => { /* pas de ticket en attente : flux normal */ });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);

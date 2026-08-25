@@ -11,6 +11,14 @@ async function parseJsonOrThrow(response: Response) {
   return data;
 }
 
+// --- Vérifie si un ticket signé (cookie) est déjà en attente de validation ---
+// Permet de retrouver le code après un rechargement de page, tant que le
+// cookie (30 min) n'a pas expiré et que le code n'a pas encore été validé.
+export async function checkExistingTicket(): Promise<{ hasTicket: boolean; ticketCode?: string }> {
+  const res = await fetch(`${API_BASE}/status`, { credentials: "include" });
+  return parseJsonOrThrow(res);
+}
+
 // --- Paiement Mobile Money ---
 // userId : uid de l'utilisateur connecte, associe a la transaction cote
 // serveur pour pouvoir declencher la recompense de parrainage une fois le

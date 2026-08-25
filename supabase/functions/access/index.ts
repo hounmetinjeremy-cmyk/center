@@ -195,7 +195,7 @@ Deno.serve(async (req: Request) => {
 
   if (path === "/status" && req.method === "GET") {
     const ticket = await readTicket(req);
-    return jsonResponse(cors, { hasTicket: Boolean(ticket), paymentMode: "real" });
+    return jsonResponse(cors, { hasTicket: Boolean(ticket), ticketCode: ticket?.code, paymentMode: "real" });
   }
 
   if (path === "/simulate-payment" && req.method === "POST") {
