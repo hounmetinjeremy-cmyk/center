@@ -437,7 +437,7 @@ function ModulesView({ onBack, onContinue }: { onBack: () => void; onContinue: (
         const isOpen = expanded.has(mod.id);
         const Icon = mod.icon;
         return (
-          <div key={mod.id} style={{ borderRadius: 16, overflow: "hidden", border: "1px solid hsl(var(--border))" }}>
+          <div key={mod.id} style={{ borderRadius: 16, overflow: "hidden", border: "1px solid hsl(var(--border))", flexShrink: 0 }}>
             <div
               style={{
                 background: mod.gradient,
