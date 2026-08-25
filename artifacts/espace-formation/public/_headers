@@ -9,3 +9,6 @@
 
 /icons/*
   Cache-Control: public, max-age=3600, must-revalidate
+
+/og-image.png
+  Cache-Control: public, max-age=3600, must-revalidate
