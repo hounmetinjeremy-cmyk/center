@@ -778,6 +778,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
   const [enteredCode, setEnteredCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [checkingTicket, setCheckingTicket] = useState(!unlocked);
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
 
@@ -860,8 +861,9 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
   // admin) : si oui, on saute directement a l'etape de validation du code,
   // sans passer par le paiement.
   useEffect(() => {
-    if (unlocked || !userId) return;
+    if (unlocked || !userId) { setCheckingTicket(false); return; }
     let cancelled = false;
+    setCheckingTicket(true);
     checkExistingTicket()
       .then(({ hasTicket, ticketCode: existingCode }) => {
         if (cancelled) return;
@@ -876,7 +878,8 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
           setStep("redeem");
         });
       })
-      .catch(() => { /* pas de ticket en attente : flux normal */ });
+      .catch(() => { /* pas de ticket en attente : flux normal */ })
+      .finally(() => { if (!cancelled) setCheckingTicket(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
@@ -885,6 +888,16 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
     return <div className="view-stack">
       <div className="page-heading"><div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div><span className="reward-icon"><Ticket size={18} /></span></div>
       <section className="reward-card"><ShieldCheck size={26} /><p>Accès débloqué</p><strong>✓</strong><span>Tu as accès à toutes les formations et au groupe WhatsApp privé.</span></section>
+    </div>;
+  }
+
+  if (checkingTicket) {
+    return <div className="view-stack">
+      <div className="page-heading"><div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div><span className="reward-icon"><Ticket size={18} /></span></div>
+      <section className="steps-card" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "40px 20px" }}>
+        <Loader2 size={22} className="auth-spin" />
+        <span style={{ fontSize: 12, color: "hsl(var(--muted-foreground))" }}>Vérification de ton accès...</span>
+      </section>
     </div>;
   }
 
