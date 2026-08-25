@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Clock3,
   Coins,
   Copy,
   Gauge,
   Gift,
+  History,
   KeyRound,
   Loader2,
   LogOut,
@@ -17,9 +20,9 @@ import {
   Sparkles,
   Ticket,
   TrendingUp,
-  Trophy,
   UserRound,
   X,
+  XCircle,
   Zap,
 } from "lucide-react";
 
@@ -61,6 +64,33 @@ const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 1;
 const REFERRAL_DRIP_HOURS = 3;
 const WITHDRAWAL_THRESHOLD = 10;
+
+type HistoryItem = {
+  id: string;
+  type: "retrait" | "paiement";
+  date: string;
+  amountCoins?: number;
+  status: string;
+};
+
+function formatHistoryDate(iso: string) {
+  try {
+    return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function historyStatusMeta(item: HistoryItem): { label: string; className: string } {
+  if (item.type === "retrait") {
+    if (item.status === "completed") return { label: "Envoyé", className: "ok" };
+    if (item.status === "failed") return { label: "Échoué", className: "fail" };
+    return { label: "En attente", className: "pending" };
+  }
+  if (item.status === "approved") return { label: "Réussi", className: "ok" };
+  if (item.status === "declined" || item.status === "canceled") return { label: "Refusé", className: "fail" };
+  return { label: "En attente", className: "pending" };
+}
 
 const COUNTRIES: Country[] = [
   {
@@ -505,7 +535,7 @@ function WalletView({
   onToast: (message: string, kind?: ToastKind) => void;
   onCoinsUpdated: () => void;
 }) {
-  const [page, setPage] = useState<"wallet" | "withdraw">("wallet");
+  const [page, setPage] = useState<"wallet" | "withdraw" | "history">("wallet");
   const [countryId, setCountryId] = useState(COUNTRIES[0].id);
   const [operatorMode, setOperatorMode] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -514,6 +544,8 @@ function WalletView({
   const [drip, setDrip] = useState<{ startedAt: number; endsAt: number; totalCoins: number } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const hadDripRef = useRef(false);
+  const [historyItems, setHistoryItems] = useState<HistoryItem[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
   const canWithdraw = coins >= WITHDRAWAL_THRESHOLD;
@@ -557,6 +589,31 @@ function WalletView({
     setPage("withdraw");
   };
 
+  const handleOpenHistory = async () => {
+    setPage("history");
+    if (!userId) return;
+    setHistoryLoading(true);
+    try {
+      const [{ data: withdrawalsData }, { data: paymentsData }] = await Promise.all([
+        supabase.from("withdrawals").select("id, amount_coins, status, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(30),
+        supabase.from("fedapay_transactions").select("transaction_id, status, updated_at").eq("user_id", userId).order("updated_at", { ascending: false }).limit(30),
+      ]);
+      const items: HistoryItem[] = [
+        ...((withdrawalsData ?? []) as Array<{ id: string; amount_coins: number; status: string; created_at: string }>).map((w) => ({
+          id: `w-${w.id}`, type: "retrait" as const, date: w.created_at, amountCoins: w.amount_coins, status: w.status,
+        })),
+        ...((paymentsData ?? []) as Array<{ transaction_id: number; status: string; updated_at: string }>).map((p) => ({
+          id: `p-${p.transaction_id}`, type: "paiement" as const, date: p.updated_at, status: p.status,
+        })),
+      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setHistoryItems(items);
+    } catch {
+      setHistoryItems([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const handleWithdraw = async () => {
     if (!userId) return;
     const amountNum = parseInt(amount, 10);
@@ -578,6 +635,44 @@ function WalletView({
       setBusy(false);
     }
   };
+
+  if (page === "history") {
+    return <div className="view-stack">
+      <div className="page-heading">
+        <button type="button" className="back-button" onClick={() => setPage("wallet")}><ArrowRight size={17} className="rotate-180" /></button>
+        <div><p className="eyebrow">HISTORIQUE</p><h1>Retraits & paiements</h1></div>
+      </div>
+
+      <section className="steps-card">
+        {historyLoading && (
+          <div className="history-empty"><Loader2 size={18} className="auth-spin" /></div>
+        )}
+        {!historyLoading && historyItems && historyItems.length === 0 && (
+          <div className="history-empty">Aucune opération pour le moment.</div>
+        )}
+        {!historyLoading && historyItems && historyItems.length > 0 && (
+          <div className="history-list">
+            {historyItems.map((item) => {
+              const meta = historyStatusMeta(item);
+              return (
+                <div key={item.id} className="history-row">
+                  <span className="history-icon">{item.type === "retrait" ? <ArrowRight size={16} className="rotate-45" /> : <Ticket size={16} />}</span>
+                  <div className="history-info">
+                    <strong>{item.type === "retrait" ? `Retrait${item.amountCoins ? ` — ${item.amountCoins} coins` : ""}` : "Ticket d'entrée"}</strong>
+                    <span>{formatHistoryDate(item.date)}</span>
+                  </div>
+                  <span className={`history-badge ${meta.className}`}>
+                    {meta.className === "ok" ? <CheckCircle2 size={11} /> : meta.className === "fail" ? <XCircle size={11} /> : <Clock3 size={11} />}
+                    {meta.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>;
+  }
 
   if (page === "withdraw") {
     return <div className="view-stack">
@@ -631,7 +726,7 @@ function WalletView({
   return <div className="view-stack">
     <div className="page-heading">
       <div><p className="eyebrow">TON PORTEFEUILLE</p><h1>Pièces & parrainage</h1></div>
-      <span className="reward-icon"><Trophy size={18} /></span>
+      <button type="button" className="reward-icon" onClick={handleOpenHistory} aria-label="Historique des retraits et paiements"><History size={18} /></button>
     </div>
     <section className="reward-card">
       <div className="coin-ring-badge"><Coins size={22} className={drip ? "coin-dripping" : undefined} /></div>

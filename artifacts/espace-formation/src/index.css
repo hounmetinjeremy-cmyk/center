@@ -197,6 +197,18 @@ button:disabled { cursor: wait; opacity: .7; }
 .drip-gauge::before { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid hsl(var(--accent) / .22); border-top-color: hsl(var(--accent)); animation: ring-spin 1.3s linear infinite; }
 .drip-gauge svg { position: relative; }
 .steps-card { padding: clamp(13px, 2vh, 19px); border: 1px solid hsl(var(--border)); border-radius: 22px; background: hsl(var(--card) / .7); }
+.history-empty { display: grid; place-items: center; gap: 8px; padding: 34px 10px; text-align: center; color: hsl(var(--muted-foreground)); font-size: 12px; }
+.history-list { display: grid; }
+.history-row { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid hsl(var(--border)); }
+.history-row:last-child { border-bottom: 0; }
+.history-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border-radius: 12px; color: hsl(var(--primary)); background: hsl(var(--primary) / .1); }
+.history-info { flex: 1; min-width: 0; }
+.history-info strong { display: block; font-size: 12px; letter-spacing: -.02em; }
+.history-info span { display: block; margin-top: 2px; color: hsl(var(--muted-foreground)); font: 500 9px var(--font-mono); }
+.history-badge { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 20px; font: 700 9px var(--font-mono); text-transform: uppercase; letter-spacing: .03em; }
+.history-badge.ok { color: hsl(150 55% 28%); background: hsl(150 55% 92%); }
+.history-badge.pending { color: hsl(38 70% 34%); background: hsl(42 92% 89%); }
+.history-badge.fail { color: hsl(4 65% 40%); background: hsl(4 70% 92%); }
 .reward-step { display: flex; align-items: center; gap: 10px; padding-top: clamp(8px, 1.5vh, 15px); }
 .reward-step > span { width: 22px; color: hsl(var(--muted-foreground)); font: 500 9px var(--font-mono); }
 .reward-step i { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 10px; color: hsl(var(--primary)); background: hsl(var(--primary) / .1); }
