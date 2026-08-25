@@ -59,7 +59,6 @@ interface Country {
 const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 1;
 const REFERRAL_DRIP_HOURS = 3;
-const COIN_VALUE_XOF = 300;
 const WITHDRAWAL_THRESHOLD = 10;
 
 const COUNTRIES: Country[] = [
@@ -155,7 +154,7 @@ const PROOF_CARDS: ProofCard[] = [
     value: "38",
     valueLabel: "Filleuls actifs",
     bars: [30, 55, 45, 70, 85, 60],
-    stats: [{ value: "12 400", label: "FCFA commissions" }, { value: "+9", label: "Cette semaine" }],
+    stats: [{ value: "124", label: "Coins gagnés" }, { value: "+9", label: "Cette semaine" }],
   },
   {
     id: "facebook",
@@ -551,7 +550,7 @@ function WalletView({
 
   const handleOpenWithdraw = () => {
     if (!canWithdraw) {
-      onToast(`Retrait possible à partir de ${WITHDRAWAL_THRESHOLD} coins (${WITHDRAWAL_THRESHOLD * COIN_VALUE_XOF} FCFA).`, "warning");
+      onToast(`Retrait possible à partir de ${WITHDRAWAL_THRESHOLD} coins.`, "warning");
       return;
     }
     setPage("withdraw");
@@ -562,7 +561,7 @@ function WalletView({
     const amountNum = parseInt(amount, 10);
     if (!operatorMode) { onToast("Choisis ton opérateur mobile money.", "warning"); return; }
     if (phoneNumber.trim().length < 6) { onToast("Entre un numéro de téléphone valide.", "warning"); return; }
-    if (!amountNum || amountNum < WITHDRAWAL_THRESHOLD) { onToast(`Le montant minimum est de ${WITHDRAWAL_THRESHOLD} coins (${WITHDRAWAL_THRESHOLD * COIN_VALUE_XOF} FCFA).`, "warning"); return; }
+    if (!amountNum || amountNum < WITHDRAWAL_THRESHOLD) { onToast(`Le montant minimum est de ${WITHDRAWAL_THRESHOLD} coins.`, "warning"); return; }
     if (amountNum > coins) { onToast("Solde insuffisant.", "warning"); return; }
     setBusy(true);
     try {
@@ -620,7 +619,6 @@ function WalletView({
         <p className="eyebrow" style={{ marginTop: 12 }}>MONTANT (COINS)</p>
         <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={WITHDRAWAL_THRESHOLD} max={coins}
           style={{ width: "100%", marginTop: 6, padding: "10px 12px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontSize: 15 }} />
-        <p style={{ margin: "6px 0 0", fontSize: 10, opacity: 0.6 }}>{Number(amount) > 0 ? Number(amount) * COIN_VALUE_XOF : 0} FCFA (1 coin = {COIN_VALUE_XOF} FCFA)</p>
 
         <button type="button" className="primary-button" onClick={handleWithdraw} disabled={busy} style={{ marginTop: 14 }}>
           {busy ? <><Loader2 size={16} className="auth-spin" /> Envoi...</> : <>Confirmer le retrait <ArrowRight size={16} /></>}
@@ -638,7 +636,7 @@ function WalletView({
       <Coins size={26} className={drip ? "coin-dripping" : undefined} />
       <p>Ton solde de pièces</p>
       <strong>{coins}</strong>
-      <span>Gagne des coins en parrainant tes amis. Retrait possible dès {WITHDRAWAL_THRESHOLD} coins ({WITHDRAWAL_THRESHOLD * COIN_VALUE_XOF} FCFA).</span>
+      <span>Gagne des coins en parrainant tes amis. Retrait possible dès {WITHDRAWAL_THRESHOLD} coins.</span>
       {drip && (
         <>
           <div className="drip-status"><Loader2 size={11} className="auth-spin" /> +{dripPending} coin en cours de versement...</div>
