@@ -597,18 +597,15 @@ function WalletView({
     if (!userId) return;
     setHistoryLoading(true);
     try {
-      const [{ data: withdrawalsData }, { data: paymentsData }] = await Promise.all([
-        supabase.from("withdrawals").select("id, amount_coins, status, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(30),
-        supabase.from("fedapay_transactions").select("transaction_id, status, updated_at").eq("user_id", userId).order("updated_at", { ascending: false }).limit(30),
-      ]);
-      const items: HistoryItem[] = [
-        ...((withdrawalsData ?? []) as Array<{ id: string; amount_coins: number; status: string; created_at: string }>).map((w) => ({
-          id: `w-${w.id}`, type: "retrait" as const, date: w.created_at, amountCoins: w.amount_coins, status: w.status,
-        })),
-        ...((paymentsData ?? []) as Array<{ transaction_id: number; status: string; updated_at: string }>).map((p) => ({
-          id: `p-${p.transaction_id}`, type: "paiement" as const, date: p.updated_at, status: p.status,
-        })),
-      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const { data } = await supabase.rpc("get_user_history", { p_user_id: userId });
+      const rows = (data ?? []) as Array<{ kind: "retrait" | "paiement"; ref: string; occurred_at: string; amount_coins: number | null; status: string }>;
+      const items: HistoryItem[] = rows.map((row) => ({
+        id: `${row.kind[0]}-${row.ref}`,
+        type: row.kind,
+        date: row.occurred_at,
+        amountCoins: row.amount_coins ?? undefined,
+        status: row.status,
+      }));
       setHistoryItems(items);
     } catch {
       setHistoryItems([]);

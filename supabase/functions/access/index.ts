@@ -126,31 +126,23 @@ function fedaPayApiBase(mode: string) {
   return mode === "live" ? "https://api.fedapay.com/v1" : "https://sandbox-api.fedapay.com/v1";
 }
 
-async function readTransactionFromDb(transactionId: string): Promise<{ status: string | null; userId: string | null }> {
+// Le statut en base n'est plus jamais utilise pour decider d'un acces : seule
+// une verification en direct aupres de FedaPay peut declencher l'emission
+// d'un ticket. Cette fonction sert uniquement a retrouver le proprietaire
+// (userId) d'une transaction pour crediter le bon compte apres verification.
+async function getFedapayTransactionOwner(transactionId: string): Promise<string | null> {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/fedapay_transactions?transaction_id=eq.${transactionId}&select=status,user_id`, {
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-    });
-    if (!res.ok) return { status: null, userId: null };
-    const rows = (await res.json()) as Array<{ status: string; user_id: string | null }>;
-    return { status: rows[0]?.status ?? null, userId: rows[0]?.user_id ?? null };
+    const { ok, data } = await rpc("get_fedapay_transaction_owner", { p_transaction_id: Number(transactionId) });
+    if (!ok) return null;
+    return typeof data === "string" ? data : null;
   } catch {
-    return { status: null, userId: null };
+    return null;
   }
 }
 
-async function upsertFedapayTransaction(transactionId: number, status: string, userId: string | null): Promise<void> {
+async function recordFedapayStatus(transactionId: number, status: string, userId: string | null): Promise<void> {
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/fedapay_transactions`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates",
-      },
-      body: JSON.stringify({ transaction_id: transactionId, status, user_id: userId, updated_at: new Date().toISOString() }),
-    });
+    await rpc("record_fedapay_status", { p_transaction_id: transactionId, p_status: status, p_user_id: userId });
   } catch {
     // non-critique : le webhook ecrira quand meme le statut plus tard
   }
@@ -227,7 +219,7 @@ Deno.serve(async (req: Request) => {
     try {
       const apiBase = fedaPayApiBase(mode);
       const tx = await createFedaPayTransaction(apiBase, secretKey, { amount: TICKET_PRICE_XOF, description: "Ticket d'entree - Espace de Formation", customerEmail: FEDAPAY_CUSTOMER_EMAIL, customerFirstname: "Client", customerLastname: "Formation", phoneNumber, country });
-      if (userId) await upsertFedapayTransaction(tx.id, "pending", userId);
+      if (userId) await recordFedapayStatus(tx.id, "pending", userId);
       const { token } = await generateFedaPayToken(apiBase, secretKey, tx.id);
       const payRes = await fetch(`${apiBase}/${operator}`, { method: "POST", headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ token, phone_number: { number: phoneNumber.replace(/\D/g, ""), country: country.toLowerCase() } }) });
       const rawPay = await payRes.text();
@@ -260,13 +252,9 @@ Deno.serve(async (req: Request) => {
   if (path === "/pay/status" && req.method === "GET") {
     const transactionId = url.searchParams.get("transactionId") ?? "";
     if (!transactionId) return jsonResponse(cors, { message: "transactionId manquant." }, 400);
-    const { status: dbStatus, userId } = await readTransactionFromDb(transactionId);
-    if (dbStatus === "approved") {
-      if (userId) await rpc("grant_access_and_start_referral_drip", { p_user_id: userId });
-      const { code, header } = await issueTicketCookie();
-      return jsonResponse(cors, { status: "approved", ticketCode: code }, 200, { "Set-Cookie": header });
-    }
-    if (dbStatus === "declined" || dbStatus === "canceled") return jsonResponse(cors, { status: dbStatus });
+    // Le statut n'est JAMAIS lu depuis le cache pour decider d'un acces : la
+    // base peut etre modifiee par n'importe qui via l'API publique, seule
+    // une verification en direct aupres de FedaPay fait foi.
     const secretKey = req.headers.get("x-fedapay-secret") ?? "";
     const mode = url.searchParams.get("mode") === "live" ? "live" : "sandbox";
     if (!secretKey) return jsonResponse(cors, { status: "pending" });
@@ -279,6 +267,8 @@ Deno.serve(async (req: Request) => {
       if (!res.ok) throw new Error((data?.message as string) ?? `FedaPay HTTP ${res.status}`);
       const tx = (data?.["v1/transaction"] as Record<string, unknown>) ?? (data?.transaction as Record<string, unknown>) ?? data;
       const status = (tx?.status as string) ?? "pending";
+      const userId = await getFedapayTransactionOwner(transactionId);
+      await recordFedapayStatus(Number(transactionId), status, userId);
       if (status === "approved") {
         if (userId) await rpc("grant_access_and_start_referral_drip", { p_user_id: userId });
         const { code, header } = await issueTicketCookie();

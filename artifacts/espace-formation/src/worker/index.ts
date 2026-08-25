@@ -15,6 +15,10 @@ export interface Env {
 }
 
 const SUPABASE_CENTER_FUNCTION_BASE = "https://iykryokvyrbdznbdxxjo.supabase.co/functions/v1/access";
+// Cle publique (anon) Supabase : intentionnellement visible cote client, ne
+// donne acces qu'a des fonctions RPC controlees, plus a un acces table direct.
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5a3J5b2t2eXJiZHpuYmR4eGpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMjg2MDUsImV4cCI6MjEwMTcwNDYwNX0.2dlNDYxBcR9HYoBpNGbnnrdXIyd1qkH6ZE1M9S8OUIE";
 
 async function hmacSha256Hex(key: string, message: string): Promise<string> {
   const cryptoKey = await crypto.subtle.importKey(
@@ -101,14 +105,16 @@ export default {
             : null;
 
       if (transactionId && status) {
-        await fetch(`https://iykryokvyrbdznbdxxjo.supabase.co/rest/v1/fedapay_transactions`, {
+        // Passe par une fonction SECURITY DEFINER : la table fedapay_transactions
+        // n'accepte plus d'ecriture directe via l'API REST publique (evite
+        // qu'un tiers falsifie un statut "approved" pour obtenir un ticket).
+        await fetch(`https://iykryokvyrbdznbdxxjo.supabase.co/rest/v1/rpc/record_fedapay_status`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates",
-            "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5a3J5b2t2eXJiZHpuYmR4eGpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMjg2MDUsImV4cCI6MjEwMTcwNDYwNX0.2dlNDYxBcR9HYoBpNGbnnrdXIyd1qkH6ZE1M9S8OUIE",
+            "apikey": SUPABASE_ANON_KEY,
           },
-          body: JSON.stringify({ transaction_id: transactionId, status, updated_at: new Date().toISOString() }),
+          body: JSON.stringify({ p_transaction_id: transactionId, p_status: status }),
         });
       }
 
