@@ -684,7 +684,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
       if (Date.now() - pendingSince > PENDING_TIMEOUT_MS) {
         setTransactionId(null);
         setPendingSince(null);
-        setPaymentError("Aucune confirmation reçue de ton opérateur. Vérifie que le numéro correspond bien à l'opérateur choisi, puis réessaie.");
+        setPaymentError("Aucune confirmation reçue de ton opérateur. Vérifie ton solde, que le numéro correspond bien à l'opérateur choisi, puis réessaie.");
         return;
       }
       try {
@@ -698,7 +698,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
         } else if (result.status === "declined" || result.status === "canceled") {
           setTransactionId(null);
           setPendingSince(null);
-          setPaymentError("Paiement refusé ou annulé par l'opérateur. Vérifie ton numéro/opérateur, puis réessaie.");
+          setPaymentError("Paiement refusé ou annulé par l'opérateur. Vérifie ton solde et ton numéro/opérateur, puis réessaie.");
         }
       } catch { /* on reessaiera au prochain tick */ }
     }, 3000);
