@@ -123,6 +123,67 @@ const MODULES: PromoModule[] = [
   },
 ];
 
+interface ProofCard {
+  id: string;
+  gradient: string;
+  label: string;
+  value: string;
+  valueLabel: string;
+  bars: number[];
+  stats: { value: string; label: string }[];
+}
+
+const PROOF_CARDS: ProofCard[] = [
+  {
+    id: "adsense",
+    gradient: "linear-gradient(135deg, #4285F4, #34A853)",
+    label: "Google AdSense",
+    value: "$67.40",
+    valueLabel: "Solde estimé",
+    bars: [40, 65, 50, 80, 60, 95],
+    stats: [{ value: "$2.48", label: "Ce mois" }, { value: "5.09K", label: "Impressions" }],
+  },
+  {
+    id: "promo",
+    gradient: "linear-gradient(135deg, #16A34A, #F59E0B)",
+    label: "Programme partenaire",
+    value: "38",
+    valueLabel: "Filleuls actifs",
+    bars: [30, 55, 45, 70, 85, 60],
+    stats: [{ value: "12 400", label: "FCFA commissions" }, { value: "+9", label: "Cette semaine" }],
+  },
+  {
+    id: "facebook",
+    gradient: "linear-gradient(135deg, #1877F2, #0B5FCC)",
+    label: "Automatisation Facebook",
+    value: "312",
+    valueLabel: "Publications auto",
+    bars: [50, 40, 70, 55, 90, 75],
+    stats: [{ value: "18.2K", label: "Portée" }, { value: "1.4K", label: "Partages" }],
+  },
+];
+
+function ProofMarquee() {
+  const cards = [...PROOF_CARDS, ...PROOF_CARDS];
+  return (
+    <div className="proof-marquee">
+      <div className="proof-track">
+        {cards.map((card, i) => (
+          <div key={`${card.id}-${i}`} className="proof-card" style={{ background: card.gradient }}>
+            <div className="proof-card-head"><span className="proof-dot" /> {card.label}</div>
+            <strong>{card.value}</strong>
+            <p className="proof-label">{card.valueLabel}</p>
+            <div className="proof-bars">{card.bars.map((h, j) => <span key={j} style={{ height: `${h}%` }} />)}</div>
+            <div className="proof-stats">
+              {card.stats.map((s, j) => <div key={j}><b>{s.value}</b><span>{s.label}</span></div>)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function capturePendingReferralFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const ref = params.get("ref");
@@ -338,6 +399,7 @@ function App() {
 function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: { firstName: string; unlocked: boolean; onGoToFormations: () => void; onGoToAccesPrive: () => void }) {
   return <div className="view-stack">
     <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p></section>
+    <ProofMarquee />
     <button type="button" className="progress-card animate-rise" onClick={onGoToFormations} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
       <div><p className="eyebrow">ÉTAPE 1</p><h2>Découvre les modules</h2><p style={{ margin: "7px 0 0", color: "hsl(42 67% 98% / .62)", fontSize: 10 }}>AdSense, parrainage, automatisation.</p></div>
       <ArrowRight size={20} color="hsl(var(--accent))" />

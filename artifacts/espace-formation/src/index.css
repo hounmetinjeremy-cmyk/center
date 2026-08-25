@@ -127,6 +127,21 @@ button:disabled { cursor: wait; opacity: .7; }
 .module-teal .card-progress span { background: hsl(var(--teal)); }
 .module-violet .card-progress span { background: hsl(262 36% 67%); }
 .module-bottom { margin-top: 8px; opacity: .67; font: 500 9px var(--font-mono); }
+.proof-marquee { overflow: hidden; margin: 0 -20px; padding: 0 20px; -webkit-mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent); mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent); }
+.proof-track { display: flex; gap: 10px; width: max-content; animation: proof-scroll 26s linear infinite; }
+.proof-marquee:hover .proof-track { animation-play-state: paused; }
+@keyframes proof-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .proof-track { animation: none; } }
+.proof-card { flex: 0 0 auto; width: 168px; padding: 12px; border-radius: 18px; color: #fff; box-shadow: 0 8px 20px hsl(var(--ink) / .12); }
+.proof-card-head { display: flex; align-items: center; gap: 6px; opacity: .9; font: 600 9px var(--font-mono); letter-spacing: .04em; }
+.proof-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ADE80; box-shadow: 0 0 0 3px rgba(74,222,128,.28); }
+.proof-card strong { display: block; margin-top: 9px; font-size: 20px; letter-spacing: -.04em; }
+.proof-card .proof-label { margin: 1px 0 0; opacity: .72; font-size: 9px; }
+.proof-bars { display: flex; align-items: flex-end; gap: 3px; height: 26px; margin-top: 10px; }
+.proof-bars span { flex: 1; border-radius: 3px 3px 0 0; background: rgba(255,255,255,.55); }
+.proof-stats { display: flex; justify-content: space-between; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,.2); font-size: 9px; }
+.proof-stats b { display: block; font-size: 11px; }
+.proof-stats span { opacity: .72; }
 .community-card { display: flex; align-items: center; gap: 10px; padding: clamp(10px, 1.8vh, 16px); border-radius: 23px; color: hsl(42 67% 98%); background: hsl(169 45% 24%); }
 .community-icon { display: grid; flex: 0 0 auto; place-items: center; width: 43px; height: 43px; border-radius: 14px; color: hsl(169 45% 24%); background: hsl(168 55% 66%); }
 .community-card > div { min-width: 0; flex: 1; }
