@@ -1,0 +1,11 @@
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+/favicon.svg
+  Cache-Control: no-cache
+
+/icons/*
+  Cache-Control: public, max-age=3600, must-revalidate
