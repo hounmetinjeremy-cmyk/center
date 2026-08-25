@@ -319,6 +319,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const withdrawalId = row.withdrawal_id as string;
+    const amountXof = row.amount_xof as number;
     const secretKey = req.headers.get("x-fedapay-secret") ?? "";
     const mode = body?.mode === "live" ? "live" : "sandbox";
 
@@ -329,7 +330,7 @@ Deno.serve(async (req: Request) => {
 
     try {
       const apiBase = fedaPayApiBase(mode);
-      const payout = await createFedaPayPayout(apiBase, secretKey, { amount: amountCoins, phoneNumber, country, operator, description: "Retrait Espace de Formation" });
+      const payout = await createFedaPayPayout(apiBase, secretKey, { amount: amountXof, phoneNumber, country, operator, description: "Retrait Espace de Formation" });
       await rpc("complete_withdrawal", { p_withdrawal_id: withdrawalId, p_fedapay_payout_id: payout.id });
       return jsonResponse(cors, { success: true, withdrawalId, payoutId: payout.id, status: payout.status });
     } catch (error) {
