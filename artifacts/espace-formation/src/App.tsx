@@ -277,6 +277,7 @@ function App() {
       }
     : null;
   const [activeNav, setActiveNav] = useState<NavItem>("accueil");
+  const [walletOpensAt, setWalletOpensAt] = useState<"wallet" | "history">("wallet");
   const [toast, setToast] = useState<{ message: string; kind: ToastKind } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [coins, setCoins] = useState(0);
@@ -392,7 +393,7 @@ function App() {
             <PrivateAccessView unlocked={unlocked} userId={authUser?.uid ?? null} onUnlocked={handleUnlocked} onToast={showToast} />
           )}
           {activeNav === "portefeuille" && (
-            <WalletView coins={coins} referralCode={referralCode} userId={authUser?.uid ?? null} onCopyReferral={copyReferralLink} onToast={showToast} onCoinsUpdated={refreshCoins} />
+            <WalletView coins={coins} referralCode={referralCode} userId={authUser?.uid ?? null} onCopyReferral={copyReferralLink} onToast={showToast} onCoinsUpdated={refreshCoins} initialPage={walletOpensAt} />
           )}
         </div>
 
@@ -403,7 +404,7 @@ function App() {
             ["acces-prive", "Ticket", Ticket],
             ["portefeuille", "Portefeuille", Coins],
           ] as const).map(([id, label, Icon]) => (
-            <button type="button" key={id} className={activeNav === id ? "active" : ""} onClick={() => setActiveNav(id)}><Icon size={18} /><span>{label}</span></button>
+            <button type="button" key={id} className={activeNav === id ? "active" : ""} onClick={() => { setWalletOpensAt("wallet"); setActiveNav(id); }}><Icon size={18} /><span>{label}</span></button>
           ))}
         </nav>
 
@@ -423,6 +424,7 @@ function App() {
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("formations"); }}><BookOpen size={17} /><span>Formations</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("acces-prive"); }}><Ticket size={17} /><span>Ticket d'entrée</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); setActiveNav("portefeuille"); }}><Coins size={17} /><span>Portefeuille</span><ChevronRight size={15} /></button>
+                <button type="button" onClick={() => { setMenuOpen(false); setWalletOpensAt("history"); setActiveNav("portefeuille"); }}><History size={17} /><span>Historique</span><ChevronRight size={15} /></button>
                 <button type="button" onClick={() => { setMenuOpen(false); showToast("La communauté est prête à t'accueillir.", "info"); }}><MessageCircle size={17} /><span>Communauté</span><ChevronRight size={15} /></button>
                 <button type="button" className="menu-logout" onClick={() => { setMenuOpen(false); handleLogout(); }}><LogOut size={17} /><span>Se déconnecter</span><ChevronRight size={15} /></button>
               </div>
@@ -527,6 +529,7 @@ function WalletView({
   onCopyReferral,
   onToast,
   onCoinsUpdated,
+  initialPage,
 }: {
   coins: number;
   referralCode: string | null;
@@ -534,8 +537,9 @@ function WalletView({
   onCopyReferral: () => void;
   onToast: (message: string, kind?: ToastKind) => void;
   onCoinsUpdated: () => void;
+  initialPage?: "wallet" | "history";
 }) {
-  const [page, setPage] = useState<"wallet" | "withdraw" | "history">("wallet");
+  const [page, setPage] = useState<"wallet" | "withdraw" | "history">(initialPage ?? "wallet");
   const [countryId, setCountryId] = useState(COUNTRIES[0].id);
   const [operatorMode, setOperatorMode] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -589,8 +593,7 @@ function WalletView({
     setPage("withdraw");
   };
 
-  const handleOpenHistory = async () => {
-    setPage("history");
+  const loadHistory = async () => {
     if (!userId) return;
     setHistoryLoading(true);
     try {
@@ -613,6 +616,16 @@ function WalletView({
       setHistoryLoading(false);
     }
   };
+
+  const handleOpenHistory = () => {
+    setPage("history");
+    loadHistory();
+  };
+
+  useEffect(() => {
+    if (initialPage === "history") loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleWithdraw = async () => {
     if (!userId) return;
