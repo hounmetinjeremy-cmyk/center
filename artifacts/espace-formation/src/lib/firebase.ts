@@ -3,7 +3,7 @@ import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyC62ADYoetwyQISP9w4P9E7Izc7gZ2AXZc",
-  authDomain: "forma-198b8.firebaseapp.com",
+  authDomain: "auth.formoney.site",
   projectId: "forma-198b8",
   storageBucket: "forma-198b8.firebasestorage.app",
   messagingSenderId: "1009313942023",
