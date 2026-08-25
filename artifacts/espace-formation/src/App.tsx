@@ -683,7 +683,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
       if (Date.now() - pendingSince > PENDING_TIMEOUT_MS) {
         setTransactionId(null);
         setPendingSince(null);
-        onToast("Erreur de numéro ou d'opérateur. Veuillez changer votre numéro / opérateur.", "warning");
+        onToast("Erreur de paiement : Veuillez vérifier votre numéro ou changer d'opérateur.", "warning");
         return;
       }
       try {
@@ -719,7 +719,8 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
       setPendingSince(Date.now());
       onToast(result.message ?? "Demande envoyée sur ton téléphone.", "success");
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Une erreur est survenue.", "warning");
+      if (err instanceof Error) console.error("[pay/mobile]", err.message);
+      onToast("Erreur de paiement : Veuillez vérifier votre numéro ou changer d'opérateur.", "warning");
     } finally {
       setBusy(false);
     }
