@@ -126,6 +126,7 @@ const MODULES: PromoModule[] = [
 interface ProofCard {
   id: string;
   gradient: string;
+  icon: typeof TrendingUp;
   label: string;
   value: string;
   valueLabel: string;
@@ -137,6 +138,7 @@ const PROOF_CARDS: ProofCard[] = [
   {
     id: "adsense",
     gradient: "linear-gradient(135deg, #4285F4, #34A853)",
+    icon: TrendingUp,
     label: "Google AdSense",
     value: "$67.40",
     valueLabel: "Solde estimé",
@@ -146,6 +148,7 @@ const PROOF_CARDS: ProofCard[] = [
   {
     id: "promo",
     gradient: "linear-gradient(135deg, #16A34A, #F59E0B)",
+    icon: Gift,
     label: "Programme partenaire",
     value: "38",
     valueLabel: "Filleuls actifs",
@@ -155,6 +158,7 @@ const PROOF_CARDS: ProofCard[] = [
   {
     id: "facebook",
     gradient: "linear-gradient(135deg, #1877F2, #0B5FCC)",
+    icon: Zap,
     label: "Automatisation Facebook",
     value: "312",
     valueLabel: "Publications auto",
@@ -168,9 +172,11 @@ function ProofMarquee() {
   return (
     <div className="proof-marquee">
       <div className="proof-track">
-        {cards.map((card, i) => (
+        {cards.map((card, i) => {
+          const Icon = card.icon;
+          return (
           <div key={`${card.id}-${i}`} className="proof-card" style={{ background: card.gradient }}>
-            <div className="proof-card-head"><span className="proof-dot" /> {card.label}</div>
+            <div className="proof-card-head"><Icon size={14} /> <span className="proof-dot" /> {card.label}</div>
             <strong>{card.value}</strong>
             <p className="proof-label">{card.valueLabel}</p>
             <div className="proof-bars">{card.bars.map((h, j) => <span key={j} style={{ height: `${h}%` }} />)}</div>
@@ -178,7 +184,8 @@ function ProofMarquee() {
               {card.stats.map((s, j) => <div key={j}><b>{s.value}</b><span>{s.label}</span></div>)}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -344,7 +351,7 @@ function App() {
 
         <div className="app-content">
           {activeNav === "accueil" && (
-            <HomeView firstName={firstName} unlocked={unlocked} onGoToFormations={() => setActiveNav("formations")} onGoToAccesPrive={() => setActiveNav("acces-prive")} />
+            <HomeView firstName={firstName} onGoToFormations={() => setActiveNav("formations")} />
           )}
           {activeNav === "formations" && (
             <ModulesView onBack={() => setActiveNav("accueil")} onContinue={() => setActiveNav("acces-prive")} />
@@ -396,18 +403,13 @@ function App() {
   );
 }
 
-function HomeView({ firstName, unlocked, onGoToFormations, onGoToAccesPrive }: { firstName: string; unlocked: boolean; onGoToFormations: () => void; onGoToAccesPrive: () => void }) {
+function HomeView({ firstName, onGoToFormations }: { firstName: string; onGoToFormations: () => void }) {
   return <div className="view-stack">
     <section className="welcome-block animate-rise"><p className="eyebrow">TON ESPACE, TON RYTHME</p><h1>Bonjour,<br /><em>{firstName}.</em></h1><p>Heureux de te retrouver. Prêt·e à faire avancer ton projet ?</p></section>
     <ProofMarquee />
-    <button type="button" className="progress-card animate-rise" onClick={onGoToFormations} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+    <button type="button" className="progress-card animate-rise" onClick={onGoToFormations} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: "clamp(6px, 2.5vh, 22px)" }}>
       <div><p className="eyebrow">ÉTAPE 1</p><h2>Découvre les modules</h2><p style={{ margin: "7px 0 0", color: "hsl(42 67% 98% / .62)", fontSize: 10 }}>AdSense, parrainage, automatisation.</p></div>
       <ArrowRight size={20} color="hsl(var(--accent))" />
-    </button>
-    <button type="button" className="community-card animate-rise" onClick={onGoToAccesPrive} style={{ width: "100%", textAlign: "left", border: 0, cursor: "pointer" }}>
-      <span className="community-icon"><Ticket size={20} /></span>
-      <div><p className="eyebrow">ÉTAPE 2 · GROUPE PRIVÉ</p><h3>{unlocked ? "Accès débloqué" : "Payer le ticket d'entrée"}</h3><p>{unlocked ? "Rejoins la communauté à tout moment." : "Un ticket unique : formations + groupe WhatsApp."}</p></div>
-      <ArrowRight size={17} />
     </button>
   </div>;
 }
