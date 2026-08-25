@@ -71,16 +71,6 @@ export default {
       );
     }
 
-    // ─── Config publique pour Checkout.js (widget cote navigateur) : la cle
-    // publique est faite pour etre exposee (elle ne permet aucune action
-    // sensible), contrairement a la cle secrete qui reste uniquement serveur.
-    if (url.pathname === "/api/fedapay/public-config") {
-      return new Response(
-        JSON.stringify({ publicKey: env.FEDAPAY_PUBLIC_KEY ?? "", mode }),
-        { headers: { "Content-Type": "application/json" } },
-      );
-    }
-
     // ─── Webhook FedaPay : appele directement par FedaPay, pas par le navigateur ───
     if (url.pathname === "/api/fedapay/webhook" && request.method === "POST") {
       const rawBody = await request.text();

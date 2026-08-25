@@ -47,12 +47,6 @@ export async function payCard(customerEmail: string): Promise<{
   return parseJsonOrThrow(res);
 }
 
-// --- Config publique pour le widget Checkout.js (clé publique + mode) ---
-export async function getFedaPayPublicConfig(): Promise<{ publicKey: string; mode: "sandbox" | "live" }> {
-  const res = await fetch(`${API_BASE}/public-config`, { credentials: "include" });
-  return parseJsonOrThrow(res);
-}
-
 // --- Verification du statut d'une transaction ---
 export async function checkPaymentStatus(transactionId: number): Promise<{
   status: "pending" | "approved" | "declined" | "canceled";
