@@ -864,29 +864,39 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
   // si ce compte a un ticket gratuit en attente (accorde manuellement cote
   // admin) : si oui, on saute directement a l'etape de validation du code,
   // sans passer par le paiement.
-  useEffect(() => {
-    if (unlocked || !userId) { setCheckingTicket(false); return; }
-    let cancelled = false;
-    setCheckingTicket(true);
+  const checkForCompTicket = (showSpinner: boolean) => {
+    if (unlocked || !userId || step !== "form") return;
+    if (showSpinner) setCheckingTicket(true);
     checkExistingTicket()
       .then(({ hasTicket, ticketCode: existingCode }) => {
-        if (cancelled) return;
         if (hasTicket && existingCode) {
           setTicketCode(existingCode);
           setStep("redeem");
           return;
         }
         return claimCompTicket(userId).then(({ ticketCode: code }) => {
-          if (cancelled) return;
           setTicketCode(code);
           setStep("redeem");
         });
       })
       .catch(() => { /* pas de ticket en attente : flux normal */ })
-      .finally(() => { if (!cancelled) setCheckingTicket(false); });
-    return () => { cancelled = true; };
+      .finally(() => setCheckingTicket(false));
+  };
+
+  useEffect(() => {
+    checkForCompTicket(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  // Un ticket gratuit accorde cote admin pendant que la page est deja
+  // ouverte (onglet en arriere-plan) ne serait sinon detecte qu'au prochain
+  // rechargement complet : on revérifie aussi quand l'app redevient visible.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === "visible") checkForCompTicket(false); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, unlocked, step]);
 
   if (step === "done") {
     return <div className="view-stack">
@@ -960,6 +970,16 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
             <span>En attente de confirmation sur +{pendingDialCode} {pendingPhone}. Tu peux corriger ton numéro/opérateur et relancer à tout moment si besoin.</span>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={() => checkForCompTicket(true)}
+          disabled={checkingTicket}
+          style={{ marginTop: 14, width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px dashed hsl(var(--border))", background: "transparent", fontSize: 11, opacity: 0.75, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+        >
+          {checkingTicket ? <Loader2 size={12} className="auth-spin" /> : null}
+          On t'a offert un ticket gratuit ? Vérifier
+        </button>
       </section>
     )}
 
