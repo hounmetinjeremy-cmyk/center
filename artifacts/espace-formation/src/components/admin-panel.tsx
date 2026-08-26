@@ -139,7 +139,7 @@ export function AdminPanel() {
 
   if (!authorized) {
     return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "hsl(var(--background))", padding: 20 }}>
+      <div className="notranslate" translate="no" style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "hsl(var(--background))", padding: 20 }}>
         <div style={{ width: "100%", maxWidth: 340, padding: 28, borderRadius: 20, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))", textAlign: "center" }}>
           <Lock size={26} style={{ margin: "0 auto 12px", display: "block" }} />
           <h1 style={{ fontSize: 18, margin: "0 0 4px" }}>Panneau admin</h1>
@@ -169,7 +169,7 @@ export function AdminPanel() {
   });
 
   return (
-    <div style={{ minHeight: "100vh", background: "hsl(var(--background))", padding: "20px 16px 60px" }}>
+    <div className="notranslate" translate="no" style={{ minHeight: "100vh", background: "hsl(var(--background))", padding: "20px 16px 60px" }}>
       <div style={{ maxWidth: 720, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <h1 style={{ fontSize: 20, margin: 0, display: "flex", alignItems: "center", gap: 8 }}><ShieldCheck size={20} /> Panneau admin</h1>
