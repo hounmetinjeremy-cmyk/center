@@ -253,33 +253,37 @@ export function AdminPanel() {
 
         {tab === "withdrawals" && (
           <section style={{ borderRadius: 16, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))", overflow: "hidden" }}>
-            {(withdrawals ?? []).map((w) => (
-              <div key={w.id} style={{ padding: "10px 14px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <strong>{w.profiles?.email ?? "—"}</strong>
-                  <span style={{ opacity: 0.6 }}>{formatDate(w.created_at)}</span>
+            <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+              {(withdrawals ?? []).map((w) => (
+                <div key={w.id} style={{ padding: "10px 14px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong>{w.profiles?.email ?? "—"}</strong>
+                    <span style={{ opacity: 0.6 }}>{formatDate(w.created_at)}</span>
+                  </div>
+                  <div style={{ opacity: 0.75, marginTop: 2 }}>{w.amount_coins} coins · +{w.country}{w.operator} {w.phone_number}</div>
+                  <span style={{ display: "inline-block", marginTop: 4, padding: "2px 8px", borderRadius: 20, fontWeight: 700, background: w.status === "completed" ? "hsl(150 55% 92%)" : w.status === "failed" ? "hsl(4 70% 92%)" : "hsl(42 92% 88%)", color: w.status === "completed" ? "hsl(150 55% 28%)" : w.status === "failed" ? "hsl(4 65% 40%)" : "hsl(38 70% 34%)" }}>{w.status}</span>
+                  {w.failure_reason && <div style={{ opacity: 0.6, marginTop: 4 }}>{w.failure_reason}</div>}
                 </div>
-                <div style={{ opacity: 0.75, marginTop: 2 }}>{w.amount_coins} coins · +{w.country}{w.operator} {w.phone_number}</div>
-                <span style={{ display: "inline-block", marginTop: 4, padding: "2px 8px", borderRadius: 20, fontWeight: 700, background: w.status === "completed" ? "hsl(150 55% 92%)" : w.status === "failed" ? "hsl(4 70% 92%)" : "hsl(42 92% 88%)", color: w.status === "completed" ? "hsl(150 55% 28%)" : w.status === "failed" ? "hsl(4 65% 40%)" : "hsl(38 70% 34%)" }}>{w.status}</span>
-                {w.failure_reason && <div style={{ opacity: 0.6, marginTop: 4 }}>{w.failure_reason}</div>}
-              </div>
-            ))}
-            {withdrawals && withdrawals.length === 0 && <div style={{ padding: 20, textAlign: "center", fontSize: 12, opacity: 0.6 }}>Aucun retrait.</div>}
+              ))}
+              {withdrawals && withdrawals.length === 0 && <div style={{ padding: 20, textAlign: "center", fontSize: 12, opacity: 0.6 }}>Aucun retrait.</div>}
+            </div>
           </section>
         )}
 
         {tab === "payments" && (
           <section style={{ borderRadius: 16, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))", overflow: "hidden" }}>
-            {(payments ?? []).map((p) => (
-              <div key={p.transaction_id} style={{ padding: "10px 14px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <strong>{p.profiles?.email ?? "—"}</strong>
-                  <span style={{ opacity: 0.6 }}>{formatDate(p.updated_at)}</span>
+            <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+              {(payments ?? []).map((p) => (
+                <div key={p.transaction_id} style={{ padding: "10px 14px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong>{p.profiles?.email ?? "—"}</strong>
+                    <span style={{ opacity: 0.6 }}>{formatDate(p.updated_at)}</span>
+                  </div>
+                  <span style={{ display: "inline-block", marginTop: 4, padding: "2px 8px", borderRadius: 20, fontWeight: 700, background: p.status === "approved" ? "hsl(150 55% 92%)" : (p.status === "declined" || p.status === "canceled") ? "hsl(4 70% 92%)" : "hsl(42 92% 88%)", color: p.status === "approved" ? "hsl(150 55% 28%)" : (p.status === "declined" || p.status === "canceled") ? "hsl(4 65% 40%)" : "hsl(38 70% 34%)" }}>{p.status}</span>
                 </div>
-                <span style={{ display: "inline-block", marginTop: 4, padding: "2px 8px", borderRadius: 20, fontWeight: 700, background: p.status === "approved" ? "hsl(150 55% 92%)" : (p.status === "declined" || p.status === "canceled") ? "hsl(4 70% 92%)" : "hsl(42 92% 88%)", color: p.status === "approved" ? "hsl(150 55% 28%)" : (p.status === "declined" || p.status === "canceled") ? "hsl(4 65% 40%)" : "hsl(38 70% 34%)" }}>{p.status}</span>
-              </div>
-            ))}
-            {payments && payments.length === 0 && <div style={{ padding: 20, textAlign: "center", fontSize: 12, opacity: 0.6 }}>Aucun paiement.</div>}
+              ))}
+              {payments && payments.length === 0 && <div style={{ padding: 20, textAlign: "center", fontSize: 12, opacity: 0.6 }}>Aucun paiement.</div>}
+            </div>
           </section>
         )}
       </div>
