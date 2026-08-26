@@ -227,25 +227,27 @@ export function AdminPanel() {
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un email ou un nom..." style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontSize: 13 }} />
               <p style={{ margin: "8px 0 0", fontSize: 11, opacity: 0.6 }}>👆 Touche un compte pour le sélectionner dans les actions ci-dessus</p>
             </div>
-            {filteredUsers.map((u) => (
-              <div
-                key={u.id}
-                onClick={() => { setActionEmail(u.email ?? ""); setActionMessage(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                style={{ padding: "10px 14px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12, cursor: "pointer", background: actionEmail && u.email === actionEmail ? "hsl(var(--primary) / .08)" : "transparent" }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <strong>{u.display_name || "—"}</strong>
-                  <span style={{ opacity: 0.6 }}>{formatDate(u.created_at)}</span>
+            <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
+              {filteredUsers.map((u) => (
+                <div
+                  key={u.id}
+                  onClick={() => { setActionEmail(u.email ?? ""); setActionMessage(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                  style={{ padding: "10px 14px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12, cursor: "pointer", background: actionEmail && u.email === actionEmail ? "hsl(var(--primary) / .08)" : "transparent" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong>{u.display_name || "—"}</strong>
+                    <span style={{ opacity: 0.6 }}>{formatDate(u.created_at)}</span>
+                  </div>
+                  <div style={{ opacity: 0.75, marginTop: 2 }}>{u.email}</div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                    <span style={{ padding: "2px 8px", borderRadius: 20, background: "hsl(var(--muted))", fontWeight: 700 }}>{u.coins} coins</span>
+                    {u.access_unlocked && <span style={{ padding: "2px 8px", borderRadius: 20, background: "hsl(150 55% 92%)", color: "hsl(150 55% 28%)", fontWeight: 700 }}>Accès débloqué</span>}
+                    {u.comp_ticket && <span style={{ padding: "2px 8px", borderRadius: 20, background: "hsl(42 92% 88%)", color: "hsl(38 70% 34%)", fontWeight: 700 }}>Ticket gratuit en attente</span>}
+                  </div>
                 </div>
-                <div style={{ opacity: 0.75, marginTop: 2 }}>{u.email}</div>
-                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                  <span style={{ padding: "2px 8px", borderRadius: 20, background: "hsl(var(--muted))", fontWeight: 700 }}>{u.coins} coins</span>
-                  {u.access_unlocked && <span style={{ padding: "2px 8px", borderRadius: 20, background: "hsl(150 55% 92%)", color: "hsl(150 55% 28%)", fontWeight: 700 }}>Accès débloqué</span>}
-                  {u.comp_ticket && <span style={{ padding: "2px 8px", borderRadius: 20, background: "hsl(42 92% 88%)", color: "hsl(38 70% 34%)", fontWeight: 700 }}>Ticket gratuit en attente</span>}
-                </div>
-              </div>
-            ))}
-            {users && filteredUsers.length === 0 && <div style={{ padding: 20, textAlign: "center", fontSize: 12, opacity: 0.6 }}>Aucun compte trouvé.</div>}
+              ))}
+              {users && filteredUsers.length === 0 && <div style={{ padding: 20, textAlign: "center", fontSize: 12, opacity: 0.6 }}>Aucun compte trouvé.</div>}
+            </div>
           </section>
         )}
 
