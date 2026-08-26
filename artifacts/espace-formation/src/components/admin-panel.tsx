@@ -225,9 +225,14 @@ export function AdminPanel() {
           <section style={{ borderRadius: 16, border: "1px solid hsl(var(--border))", background: "hsl(var(--card))", overflow: "hidden" }}>
             <div style={{ padding: 12, borderBottom: "1px solid hsl(var(--border))" }}>
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un email ou un nom..." style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid hsl(var(--border))", fontSize: 13 }} />
+              <p style={{ margin: "8px 0 0", fontSize: 11, opacity: 0.6 }}>👆 Touche un compte pour le sélectionner dans les actions ci-dessus</p>
             </div>
             {filteredUsers.map((u) => (
-              <div key={u.id} style={{ padding: "10px 14px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12 }}>
+              <div
+                key={u.id}
+                onClick={() => { setActionEmail(u.email ?? ""); setActionMessage(null); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                style={{ padding: "10px 14px", borderBottom: "1px solid hsl(var(--border))", fontSize: 12, cursor: "pointer", background: actionEmail && u.email === actionEmail ? "hsl(var(--primary) / .08)" : "transparent" }}
+              >
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <strong>{u.display_name || "—"}</strong>
                   <span style={{ opacity: 0.6 }}>{formatDate(u.created_at)}</span>
