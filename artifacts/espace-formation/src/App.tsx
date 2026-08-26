@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 
 import { AuthView } from "@/components/auth-view";
+import { AdminPanel } from "@/components/admin-panel";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
 import { payMobile, checkPaymentStatus, redeemTicketCode, requestWithdrawal, claimCompTicket, checkExistingTicket } from "@/lib/access-api";
@@ -269,6 +270,9 @@ async function markAccessUnlocked(uid: string) {
 
 function App() {
   const { user: authUser, loading: authLoading, logout } = useAuth();
+  if (typeof window !== "undefined" && window.location.hash === "#admin") {
+    return <AdminPanel />;
+  }
   const user: AppUser | null = authUser
     ? {
         displayName: authUser.displayName?.trim() || "Apprenant·e",

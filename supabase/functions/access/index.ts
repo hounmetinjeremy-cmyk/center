@@ -16,12 +16,14 @@ const SESSION_SECRET = Deno.env.get("SESSION_SECRET") ?? "";
 const WHATSAPP_GROUP_INVITE_URL = Deno.env.get("WHATSAPP_GROUP_INVITE_URL") ?? "";
 const SUPABASE_URL = "https://iykryokvyrbdznbdxxjo.supabase.co";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY") ?? "";
+const ADMIN_PASSWORD = Deno.env.get("ADMIN_PASSWORD") ?? "";
 
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("origin") ?? "*";
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-fedapay-secret",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-fedapay-secret, x-admin-password",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Credentials": "true",
     "Vary": "Origin",
@@ -186,6 +188,35 @@ async function rpc(fnName: string, args: Record<string, unknown>) {
   return { ok: res.ok, data };
 }
 
+// --- Panneau admin : protege par mot de passe (ADMIN_PASSWORD), utilise la
+// service_role key (contourne les RLS) — jamais expose comme fonction RPC
+// publique pour eviter qu'un tiers l'appelle directement avec la cle anon. ---
+function isAdmin(req: Request): boolean {
+  return Boolean(ADMIN_PASSWORD) && req.headers.get("x-admin-password") === ADMIN_PASSWORD;
+}
+
+async function serviceFetch(path: string, init: RequestInit = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    ...init,
+    headers: {
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      ...(init.headers as Record<string, string> | undefined),
+    },
+  });
+  const raw = await res.text();
+  let data: unknown = null;
+  try { if (raw.trim()) data = JSON.parse(raw); } catch { /* ignore */ }
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function findUserIdByEmail(email: string): Promise<string | null> {
+  const { ok, data } = await serviceFetch(`/profiles?email=eq.${encodeURIComponent(email)}&select=id`);
+  if (!ok || !Array.isArray(data) || !data[0]) return null;
+  return (data[0] as { id: string }).id;
+}
+
 Deno.serve(async (req: Request) => {
   const cors = corsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
@@ -338,6 +369,82 @@ Deno.serve(async (req: Request) => {
       await rpc("fail_withdrawal", { p_withdrawal_id: withdrawalId, p_reason: message });
       return jsonResponse(cors, { message: `Retrait echoue, coins recredites : ${message}` }, 500);
     }
+  }
+
+  if (path.startsWith("/admin/")) {
+    if (!isAdmin(req)) return jsonResponse(cors, { message: "Mot de passe admin invalide." }, 401);
+
+    if (path === "/admin/users" && req.method === "GET") {
+      const { ok, data } = await serviceFetch(
+        "/profiles?select=id,email,display_name,coins,access_unlocked,comp_ticket,referral_code,referred_by,created_at&order=created_at.desc&limit=200",
+      );
+      if (!ok) return jsonResponse(cors, { message: "Erreur de lecture des comptes." }, 500);
+      return jsonResponse(cors, { users: data });
+    }
+
+    if (path === "/admin/grant-ticket" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const email = typeof body?.email === "string" ? body.email.trim() : "";
+      if (!email) return jsonResponse(cors, { message: "email manquant." }, 400);
+      const userId = await findUserIdByEmail(email);
+      if (!userId) return jsonResponse(cors, { message: "Aucun compte avec cet email." }, 404);
+      const { ok } = await serviceFetch(`/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ comp_ticket: true, updated_at: new Date().toISOString() }),
+      });
+      if (!ok) return jsonResponse(cors, { message: "Echec de l'octroi du ticket." }, 500);
+      return jsonResponse(cors, { success: true });
+    }
+
+    if (path === "/admin/unlock" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const email = typeof body?.email === "string" ? body.email.trim() : "";
+      if (!email) return jsonResponse(cors, { message: "email manquant." }, 400);
+      const userId = await findUserIdByEmail(email);
+      if (!userId) return jsonResponse(cors, { message: "Aucun compte avec cet email." }, 404);
+      const { ok } = await serviceFetch(`/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ access_unlocked: true, updated_at: new Date().toISOString() }),
+      });
+      if (!ok) return jsonResponse(cors, { message: "Echec du deblocage." }, 500);
+      return jsonResponse(cors, { success: true });
+    }
+
+    if (path === "/admin/coins" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const email = typeof body?.email === "string" ? body.email.trim() : "";
+      const delta = typeof body?.delta === "number" ? Math.trunc(body.delta) : NaN;
+      if (!email || !Number.isFinite(delta)) return jsonResponse(cors, { message: "email et delta (nombre) requis." }, 400);
+      const userId = await findUserIdByEmail(email);
+      if (!userId) return jsonResponse(cors, { message: "Aucun compte avec cet email." }, 404);
+      const { ok, data } = await serviceFetch(`/profiles?id=eq.${encodeURIComponent(userId)}&select=coins`);
+      const current = ok && Array.isArray(data) && data[0] ? (data[0] as { coins: number }).coins : 0;
+      const next = Math.max(0, current + delta);
+      const patch = await serviceFetch(`/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ coins: next, updated_at: new Date().toISOString() }),
+      });
+      if (!patch.ok) return jsonResponse(cors, { message: "Echec de l'ajustement des coins." }, 500);
+      return jsonResponse(cors, { success: true, coins: next });
+    }
+
+    if (path === "/admin/withdrawals" && req.method === "GET") {
+      const { ok, data } = await serviceFetch(
+        "/withdrawals?select=id,amount_coins,amount_xof,phone_number,country,operator,status,failure_reason,created_at,profiles(email,display_name)&order=created_at.desc&limit=100",
+      );
+      if (!ok) return jsonResponse(cors, { message: "Erreur de lecture des retraits." }, 500);
+      return jsonResponse(cors, { withdrawals: data });
+    }
+
+    if (path === "/admin/payments" && req.method === "GET") {
+      const { ok, data } = await serviceFetch(
+        "/fedapay_transactions?select=transaction_id,status,updated_at,profiles(email,display_name)&order=updated_at.desc&limit=100",
+      );
+      if (!ok) return jsonResponse(cors, { message: "Erreur de lecture des paiements." }, 500);
+      return jsonResponse(cors, { payments: data });
+    }
+
+    return jsonResponse(cors, { message: "Route admin inconnue." }, 404);
   }
 
   return jsonResponse(cors, { message: "Not found" }, 404);
