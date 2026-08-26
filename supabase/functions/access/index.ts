@@ -322,8 +322,13 @@ Deno.serve(async (req: Request) => {
     usedNonces.add(ticket.nonce);
     // Ticket gratuit reellement consomme seulement une fois le code valide
     // avec succes (jamais avant), pour ne jamais perdre un ticket accorde
-    // si une etape intermediaire echoue cote reseau.
-    if (userId) await rpc("clear_comp_ticket", { p_user_id: userId }).catch(() => {});
+    // si une etape intermediaire echoue cote reseau. Meme logique pour un
+    // compte debloque directement par l'admin : whatsapp_redeemed_at n'est
+    // pose qu'ici, jamais avant.
+    if (userId) {
+      await rpc("clear_comp_ticket", { p_user_id: userId }).catch(() => {});
+      await rpc("mark_whatsapp_redeemed", { p_user_id: userId }).catch(() => {});
+    }
     return jsonResponse(cors, { inviteUrl: WHATSAPP_GROUP_INVITE_URL }, 200, { "Set-Cookie": setCookieHeader("", 0) });
   }
 
@@ -332,9 +337,15 @@ Deno.serve(async (req: Request) => {
     const userId = typeof body?.userId === "string" ? body.userId : "";
     if (!userId) return jsonResponse(cors, { message: "userId manquant." }, 400);
     // Simple lecture, aucune mutation : peut etre rappelee sans risque tant
-    // que le ticket n'a pas ete reellement redeem (voir /redeem).
-    const { ok, data } = await rpc("has_comp_ticket", { p_user_id: userId });
-    if (!ok || data !== true) return jsonResponse(cors, { message: "Aucun ticket gratuit disponible pour ce compte." }, 403);
+    // que le ticket n'a pas ete reellement redeem (voir /redeem). Couvre
+    // deux cas d'octroi manuel cote admin : "Ticket gratuit" (comp_ticket)
+    // et "Débloquer l'accès" (access_unlocked sans code jamais valide).
+    const [compResult, unlockResult] = await Promise.all([
+      rpc("has_comp_ticket", { p_user_id: userId }),
+      rpc("needs_ticket_redeem", { p_user_id: userId }),
+    ]);
+    const eligible = (compResult.ok && compResult.data === true) || (unlockResult.ok && unlockResult.data === true);
+    if (!eligible) return jsonResponse(cors, { message: "Aucun ticket disponible pour ce compte." }, 403);
     const { code, header } = await issueTicketCookie();
     return jsonResponse(cors, { ticketCode: code }, 200, { "Set-Cookie": header });
   }

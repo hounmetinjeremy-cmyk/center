@@ -770,7 +770,11 @@ function WalletView({
 }
 
 function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked: boolean; userId: string | null; onUnlocked: () => void; onToast: (message: string, kind?: ToastKind) => void }) {
-  const [step, setStep] = useState<"form" | "redeem" | "done">(unlocked ? "done" : "form");
+  // Ne jamais deduire "done" directement de `unlocked` : un compte debloque
+  // cote admin (bouton "Débloquer l'accès") a access_unlocked=true sans
+  // jamais avoir valide de code. Seul l'effet de verification ci-dessous
+  // (qui distingue "deja redeem par le passe" de "jamais redeem") decide.
+  const [step, setStep] = useState<"form" | "redeem" | "done">("form");
   const [countryId, setCountryId] = useState(COUNTRIES[0].id);
   const [operatorMode, setOperatorMode] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -782,7 +786,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
   const [enteredCode, setEnteredCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [checkingTicket, setCheckingTicket] = useState(!unlocked);
+  const [checkingTicket, setCheckingTicket] = useState(true);
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
 
@@ -865,7 +869,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
   // admin) : si oui, on saute directement a l'etape de validation du code,
   // sans passer par le paiement.
   const checkForCompTicket = (showSpinner: boolean) => {
-    if (unlocked || !userId || step !== "form") return;
+    if (!userId || step !== "form") return;
     if (showSpinner) setCheckingTicket(true);
     checkExistingTicket()
       .then(({ hasTicket, ticketCode: existingCode }) => {
@@ -874,12 +878,19 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
           setStep("redeem");
           return;
         }
-        return claimCompTicket(userId).then(({ ticketCode: code }) => {
-          setTicketCode(code);
-          setStep("redeem");
-        });
+        return claimCompTicket(userId)
+          .then(({ ticketCode: code }) => {
+            setTicketCode(code);
+            setStep("redeem");
+          })
+          .catch(() => {
+            // Ni ticket gratuit ni deblocage admin en attente de code : si
+            // le compte a deja valide un code par le passe, acces direct,
+            // sinon flux de paiement normal.
+            if (unlocked) setStep("done");
+          });
       })
-      .catch(() => { /* pas de ticket en attente : flux normal */ })
+      .catch(() => { if (unlocked) setStep("done"); })
       .finally(() => setCheckingTicket(false));
   };
 
