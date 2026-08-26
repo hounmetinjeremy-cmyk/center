@@ -84,12 +84,12 @@ export async function payForTicket(name: string): Promise<{
 }
 
 // --- Validation du code ticket ---
-export async function redeemTicketCode(code: string): Promise<{ inviteUrl: string }> {
+export async function redeemTicketCode(code: string, userId: string | null): Promise<{ inviteUrl: string }> {
   const res = await fetch(`${API_BASE}/redeem`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, userId }),
   });
   return parseJsonOrThrow(res);
 }

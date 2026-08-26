@@ -847,7 +847,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
     if (enteredCode.trim().length < 4) { onToast("Entre le code complet reçu après paiement.", "warning"); return; }
     setBusy(true);
     try {
-      const { inviteUrl } = await redeemTicketCode(enteredCode);
+      const { inviteUrl } = await redeemTicketCode(enteredCode, userId);
       setStep("done");
       onUnlocked();
       onToast("Code validé ! Accès débloqué, ouverture de WhatsApp...", "success");

@@ -316,9 +316,14 @@ Deno.serve(async (req: Request) => {
     if (!ticket) return jsonResponse(cors, { message: "Aucun ticket valide. Paye d'abord pour recevoir ton code." }, 403);
     const body = await req.json().catch(() => ({}));
     const enteredCode = typeof body?.code === "string" ? body.code.trim().toUpperCase() : "";
+    const userId = typeof body?.userId === "string" ? body.userId : "";
     if (enteredCode !== ticket.code) return jsonResponse(cors, { message: "Code incorrect. Verifie et reessaie." }, 400);
     if (!WHATSAPP_GROUP_INVITE_URL) return jsonResponse(cors, { message: "L'acces WhatsApp n'est pas configure cote serveur." }, 503);
     usedNonces.add(ticket.nonce);
+    // Ticket gratuit reellement consomme seulement une fois le code valide
+    // avec succes (jamais avant), pour ne jamais perdre un ticket accorde
+    // si une etape intermediaire echoue cote reseau.
+    if (userId) await rpc("clear_comp_ticket", { p_user_id: userId }).catch(() => {});
     return jsonResponse(cors, { inviteUrl: WHATSAPP_GROUP_INVITE_URL }, 200, { "Set-Cookie": setCookieHeader("", 0) });
   }
 
@@ -326,7 +331,9 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const userId = typeof body?.userId === "string" ? body.userId : "";
     if (!userId) return jsonResponse(cors, { message: "userId manquant." }, 400);
-    const { ok, data } = await rpc("consume_comp_ticket", { p_user_id: userId });
+    // Simple lecture, aucune mutation : peut etre rappelee sans risque tant
+    // que le ticket n'a pas ete reellement redeem (voir /redeem).
+    const { ok, data } = await rpc("has_comp_ticket", { p_user_id: userId });
     if (!ok || data !== true) return jsonResponse(cors, { message: "Aucun ticket gratuit disponible pour ce compte." }, 403);
     const { code, header } = await issueTicketCookie();
     return jsonResponse(cors, { ticketCode: code }, 200, { "Set-Cookie": header });
