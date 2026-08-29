@@ -30,7 +30,7 @@ import { AuthView } from "@/components/auth-view";
 import { AdminPanel } from "@/components/admin-panel";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
-import { payMobile, checkPaymentStatus, redeemTicketCode, requestWithdrawal, claimCompTicket, checkExistingTicket } from "@/lib/access-api";
+import { payMobile, checkPaymentStatus, redeemTicketCode, requestWithdrawal, claimCompTicket, checkExistingTicket, getReferralProgress } from "@/lib/access-api";
 
 type ToastKind = "success" | "warning" | "info";
 type AppUser = { displayName: string; email: string; photoURL?: string | null };
@@ -65,6 +65,7 @@ const PENDING_REFERRAL_KEY = "espace-formation:pending-referral";
 const REFERRAL_REWARD_COINS = 1;
 const REFERRAL_DRIP_HOURS = 3;
 const WITHDRAWAL_THRESHOLD = 10;
+const REFERRAL_TICKET_THRESHOLD = 3;
 
 type HistoryItem = {
   id: string;
@@ -394,7 +395,7 @@ function App() {
             <ModulesView onBack={() => setActiveNav("accueil")} onContinue={() => setActiveNav("acces-prive")} />
           )}
           {activeNav === "acces-prive" && (
-            <PrivateAccessView unlocked={unlocked} userId={authUser?.uid ?? null} onUnlocked={handleUnlocked} onToast={showToast} />
+            <PrivateAccessView unlocked={unlocked} userId={authUser?.uid ?? null} referralCode={referralCode} onCopyReferral={copyReferralLink} onUnlocked={handleUnlocked} onToast={showToast} />
           )}
           {activeNav === "portefeuille" && (
             <WalletView coins={coins} referralCode={referralCode} userId={authUser?.uid ?? null} onCopyReferral={copyReferralLink} onToast={showToast} onCoinsUpdated={refreshCoins} initialPage={walletOpensAt} />
@@ -769,7 +770,7 @@ function WalletView({
   </div>;
 }
 
-function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked: boolean; userId: string | null; onUnlocked: () => void; onToast: (message: string, kind?: ToastKind) => void }) {
+function PrivateAccessView({ unlocked, userId, referralCode, onCopyReferral, onUnlocked, onToast }: { unlocked: boolean; userId: string | null; referralCode: string | null; onCopyReferral: () => void; onUnlocked: () => void; onToast: (message: string, kind?: ToastKind) => void }) {
   // Ne jamais deduire "done" directement de `unlocked` : un compte debloque
   // cote admin (bouton "Débloquer l'accès") a access_unlocked=true sans
   // jamais avoir valide de code. Seul l'effet de verification ci-dessous
@@ -787,6 +788,7 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
   const [busy, setBusy] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [checkingTicket, setCheckingTicket] = useState(true);
+  const [referredCount, setReferredCount] = useState(0);
 
   const country = COUNTRIES.find((c) => c.id === countryId) ?? COUNTRIES[0];
 
@@ -909,6 +911,24 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, unlocked, step]);
 
+  // Progression "invite 3 amis" : rafraichie a l'ouverture puis toutes les
+  // 15s tant qu'on est sur l'ecran de paiement, pour que le ticket gratuit
+  // (accorde automatiquement des le 3e filleul payant) soit detecte sans
+  // que l'utilisateur ait besoin de recharger la page.
+  useEffect(() => {
+    if (!userId || step !== "form") return;
+    let cancelled = false;
+    const fetchProgress = () => {
+      getReferralProgress(userId)
+        .then(({ referredCount: count }) => { if (!cancelled) setReferredCount(count); })
+        .catch(() => {});
+    };
+    fetchProgress();
+    const poll = window.setInterval(() => { fetchProgress(); checkForCompTicket(false); }, 15_000);
+    return () => { cancelled = true; window.clearInterval(poll); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, step]);
+
   if (step === "done") {
     return <div className="view-stack">
       <div className="page-heading"><div><p className="eyebrow">ÉTAPE 2 · TICKET D'ENTRÉE</p><h1>Accès au groupe privé</h1></div><span className="reward-icon"><Ticket size={18} /></span></div>
@@ -991,6 +1011,25 @@ function PrivateAccessView({ unlocked, userId, onUnlocked, onToast }: { unlocked
           {checkingTicket ? <Loader2 size={12} className="auth-spin" /> : null}
           On t'a offert un ticket gratuit ? Vérifier
         </button>
+      </section>
+    )}
+
+    {step === "form" && (
+      <section className="reward-card">
+        <Gift size={26} />
+        <p>Ou débloque gratuitement</p>
+        <strong>{Math.min(referredCount, REFERRAL_TICKET_THRESHOLD)}/{REFERRAL_TICKET_THRESHOLD} ami·e·s</strong>
+        <div style={{ display: "flex", gap: 4, width: "100%", margin: "2px 0 4px" }}>
+          {Array.from({ length: REFERRAL_TICKET_THRESHOLD }).map((_, i) => (
+            <span key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: i < referredCount ? "hsl(var(--primary))" : "hsl(var(--border))", transition: "background .2s" }} />
+          ))}
+        </div>
+        <span>Invite {REFERRAL_TICKET_THRESHOLD} ami·e·s à payer leur ticket avec ton lien : ton accès se débloque automatiquement, sans rien payer.</span>
+        {referralCode ? (
+          <button type="button" onClick={onCopyReferral}><Copy size={15} /> Copier mon lien ({referralCode})</button>
+        ) : (
+          <span style={{ opacity: 0.6, fontSize: 10 }}>Chargement de ton code...</span>
+        )}
       </section>
     )}
 
