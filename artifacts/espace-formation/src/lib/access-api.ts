@@ -19,6 +19,19 @@ export async function checkExistingTicket(): Promise<{ hasTicket: boolean; ticke
   return parseJsonOrThrow(res);
 }
 
+// --- Progression du parrainage : nombre de filleuls ayant payé leur ticket,
+// vs le seuil requis pour débloquer un ticket gratuit ---
+export async function getReferralProgress(userId: string): Promise<{
+  referredCount: number;
+  threshold: number;
+  ticketGranted: boolean;
+}> {
+  const res = await fetch(`${API_BASE}/referral-progress?userId=${encodeURIComponent(userId)}`, {
+    credentials: "include",
+  });
+  return parseJsonOrThrow(res);
+}
+
 // --- Paiement Mobile Money ---
 // userId : uid de l'utilisateur connecte, associe a la transaction cote
 // serveur pour pouvoir declencher la recompense de parrainage une fois le

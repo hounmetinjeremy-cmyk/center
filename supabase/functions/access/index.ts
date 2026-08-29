@@ -301,7 +301,16 @@ Deno.serve(async (req: Request) => {
       const userId = await getFedapayTransactionOwner(transactionId);
       await recordFedapayStatus(Number(transactionId), status, userId);
       if (status === "approved") {
-        if (userId) await rpc("grant_access_and_start_referral_drip", { p_user_id: userId });
+        if (userId) {
+          await rpc("grant_access_and_start_referral_drip", { p_user_id: userId });
+          // Ce paiement peut faire passer le PARRAIN (pas le payeur) au-dessus
+          // du seuil de filleuls payants requis pour un ticket gratuit : on
+          // verifie et accorde ce ticket au parrain ici, juste apres que ce
+          // filleul soit officiellement compte comme "acces_unlocked".
+          // Non-bloquant : un echec ici ne doit jamais faire rater la
+          // confirmation du paiement du payeur.
+          await rpc("grant_referral_ticket_if_eligible", { p_user_id: userId }).catch(() => {});
+        }
         const { code, header } = await issueTicketCookie();
         return jsonResponse(cors, { status, ticketCode: code }, 200, { "Set-Cookie": header });
       }
@@ -309,6 +318,19 @@ Deno.serve(async (req: Request) => {
     } catch (error) {
       return jsonResponse(cors, { message: error instanceof Error ? error.message : "Erreur FedaPay" }, 500);
     }
+  }
+
+  if (path === "/referral-progress" && req.method === "GET") {
+    const userId = url.searchParams.get("userId") ?? "";
+    if (!userId) return jsonResponse(cors, { message: "userId manquant." }, 400);
+    const { ok, data } = await rpc("get_referral_progress", { p_user_id: userId });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!ok || !row) return jsonResponse(cors, { referredCount: 0, threshold: 3, ticketGranted: false });
+    return jsonResponse(cors, {
+      referredCount: row.referred_count ?? 0,
+      threshold: row.threshold ?? 3,
+      ticketGranted: Boolean(row.ticket_granted),
+    });
   }
 
   if (path === "/redeem" && req.method === "POST") {
